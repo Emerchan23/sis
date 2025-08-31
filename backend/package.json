@@ -1,0 +1,30 @@
+{
+  "name": "erp-br-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "seed": "node dist/seed-demo.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^9.3.1",
+    "@fastify/cors": "^9.0.1",
+    "better-sqlite3": "^9.6.0",
+    "date-fns": "4.1.0",
+    "fastify": "^4.28.1",
+    "nanoid": "^5.0.0",
+    "zod": "3.25.67"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}
