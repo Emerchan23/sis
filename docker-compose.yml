@@ -4,12 +4,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     environment:
-      - PORT=8001
+      - PORT=4523
       - CORS_ORIGIN=http://frontend:4522,http://localhost:4522
       - DB_PATH=/app/data/erp.sqlite
       - NODE_ENV=production
     ports:
-      - "8001:8001"
+      - "4523:4523"
     volumes:
       - ./backend/data:/app/data
     networks:
@@ -21,7 +21,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - NEXT_PUBLIC_API_URL=http://localhost:4523
       - NODE_ENV=production
       - PORT=4522
     ports:

@@ -54,7 +54,7 @@ npm run dev
 ## 🌐 Acesso
 
 - **Frontend**: http://localhost:4522
-- **Backend API**: http://localhost:8001
+- **Backend API**: http://localhost:4523
 
 ## 📊 Estrutura do Projeto
 

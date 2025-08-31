@@ -170,7 +170,7 @@ function isArrayOfObjects(a: unknown): a is Record<string, unknown>[] {
 
 export async function getBackup(): Promise<BackupPayload> {
   try {
-    const response = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001").replace(/\/$/, "")}/backup/export`, {
+    const response = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:4523").replace(/\/$/, "")}/backup/export`, {
       method: "GET",
       credentials: "include"
     })
@@ -195,7 +195,7 @@ export async function getBackup(): Promise<BackupPayload> {
 export async function restoreBackup(payload: BackupPayload, opts?: { merge?: boolean }) {
   try {
     const merge = opts?.merge || false
-    const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001").replace(/\/$/, "")
+    const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4523").replace(/\/$/, "")
     const url = `${apiUrl}/backup/import?merge=${merge ? "1" : "0"}`
     
     const response = await fetch(url, {

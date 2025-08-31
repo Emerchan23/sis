@@ -1,6 +1,6 @@
 "use client"
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001").replace(/\/$/, "")
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4523").replace(/\/$/, "")
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {

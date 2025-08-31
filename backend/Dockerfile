@@ -21,5 +21,5 @@ COPY --from=builder /app/dist ./dist
 COPY package.json ./package.json
 # volume para o arquivo .sqlite (ajuste path se necessário)
 VOLUME ["/app/data"]
-EXPOSE 8001
+EXPOSE 4523
 CMD ["npm", "start"]
