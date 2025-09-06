@@ -2,7 +2,42 @@
 
 Sistema ERP completo desenvolvido em Next.js com backend em Node.js, focado em gestão de vendas, clientes, produtos e relatórios financeiros.
 
-## 🚀 Instalação Automática
+## 📦 Instalação via GitHub
+
+### Método Rápido (Recomendado)
+
+```bash
+# Clone o repositório
+git clone https://github.com/Emerchan23/sis.git
+cd sis
+
+# Execute o script de instalação
+# Windows:
+.\install.ps1
+
+# Linux/Mac:
+./install.sh
+```
+
+### Instalação Manual
+
+```bash
+# Clone o repositório
+git clone https://github.com/Emerchan23/sis.git
+cd sis
+
+# Instale as dependências
+npm install
+
+# Inicie o sistema
+npm run dev
+```
+
+**📖 Guia completo:** Consulte `INSTALACAO_GITHUB.md` para instruções detalhadas.
+
+---
+
+## 🚀 Instalação Automática (Alternativa)
 
 Este sistema possui instalação **100% automática**. Basta executar um comando e tudo será configurado automaticamente.
 
