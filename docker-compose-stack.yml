@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  erp-br:
+    image: emerchan2025/erp-br:latest
+    container_name: erp-br-app
+    ports:
+      - "3145:3145"
+    volumes:
+      - erp_data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3145
+      - DB_PATH=/app/data/erp.sqlite
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3145/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - erp_network
+
+volumes:
+  erp_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data
+
+networks:
+  erp_network:
+    driver: bridge
+    name: erp_network

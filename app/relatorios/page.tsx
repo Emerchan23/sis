@@ -15,7 +15,7 @@ import { ERP_CHANGED_EVENT } from "@/lib/data-store"
 import { getConfig } from "@/lib/config"
 import { Printer, RefreshCw, Download } from "lucide-react"
 
-type DistRow = { participanteId: string; nome: string; total: number; qtdAcertos: number }
+type DistRow = { participanteId: string; nome: string; total: number; totalBruto: number; totalDespesasIndiv: number; qtdAcertos: number }
 type FaturamentoAno = { ano: number; total: number }
 
 // Normaliza percentuais: aceita 10 (10%) ou 0.1 (10%)
@@ -139,6 +139,13 @@ export default function RelatoriosPage() {
     },
     [acertosPeriodo],
   )
+  
+  // Lucro líquido = Lucro bruto - Despesas dos acertos
+  const totalLucroLiquido = useMemo(
+    () => totalLucroBruto - totalDespesasAcertos,
+    [totalLucroBruto, totalDespesasAcertos],
+  )
+  
   const faturamentoPeriodo = useMemo(() => linhasPeriodo.reduce((a, l) => a + getValorVenda(l), 0), [linhasPeriodo])
 
   // Faturamento por ano (filtrado pelo período selecionado)
@@ -157,12 +164,17 @@ export default function RelatoriosPage() {
 
   // Distribuição por participante (acertos do período)
   const distribPorParticipante: DistRow[] = useMemo(() => {
-    const map = new Map<string, { total: number; qtd: number }>()
+    const map = new Map<string, { totalLiquido: number; totalBruto: number; totalDespesasIndiv: number; qtd: number }>()
     for (const a of acertosPeriodo) {
       const distribs: any[] = a.distribuicoes || []
       for (const d of distribs) {
-        const cur = map.get(d.participanteId) || { total: 0, qtd: 0 }
-        map.set(d.participanteId, { total: cur.total + (Number(d.valor) || 0), qtd: cur.qtd + 1 })
+        const cur = map.get(d.participanteId) || { totalLiquido: 0, totalBruto: 0, totalDespesasIndiv: 0, qtd: 0 }
+        map.set(d.participanteId, { 
+          totalLiquido: cur.totalLiquido + (Number(d.valor) || 0),
+          totalBruto: cur.totalBruto + (Number(d.valorBruto) || 0),
+          totalDespesasIndiv: cur.totalDespesasIndiv + (Number(d.descontoIndividual) || 0),
+          qtd: cur.qtd + 1 
+        })
       }
     }
     const byIdName = new Map(participantes.map((p: any) => [p.id, p.nome] as const))
@@ -170,7 +182,9 @@ export default function RelatoriosPage() {
       .map(([participanteId, info]) => ({
         participanteId,
         nome: byIdName.get(participanteId) || `Participante ${participanteId.slice(0, 6)}`,
-        total: +info.total.toFixed(2),
+        total: +info.totalLiquido.toFixed(2),
+        totalBruto: +info.totalBruto.toFixed(2),
+        totalDespesasIndiv: +info.totalDespesasIndiv.toFixed(2),
         qtdAcertos: info.qtd,
       }))
       .sort((a, b) => b.total - a.total)
@@ -248,6 +262,7 @@ export default function RelatoriosPage() {
       ["Impostos pagos", totalImpostos],
       ["Lucro bruto (linhas)", totalLucroBruto],
       ["Despesas (acertos)", totalDespesasAcertos],
+      ["Lucro líquido", totalLucroLiquido],
     ]
     const csv = rows.map((r) => r.join(";")).join("\n")
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
@@ -260,8 +275,8 @@ export default function RelatoriosPage() {
   }
 
   function exportDistribuicaoCSV() {
-    const header = ["Participante", "Total recebido", "Qtd. acertos"]
-    const rows = [header, ...distribPorParticipante.map((r) => [r.nome, r.total, r.qtdAcertos])]
+    const header = ["Participante", "Lucro bruto", "Despesas individuais", "Lucro líquido", "Qtd. acertos"]
+    const rows = [header, ...distribPorParticipante.map((r) => [r.nome, r.totalBruto, r.totalDespesasIndiv, r.total, r.qtdAcertos])]
     const csv = rows.map((r) => r.join(";")).join("\n")
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
     const url = URL.createObjectURL(blob)
@@ -332,13 +347,14 @@ export default function RelatoriosPage() {
       { label: "Impostos pagos", amount: totalImpostos, highlight: "red" as const },
       { label: "Lucro bruto (linhas)", amount: totalLucroBruto, highlight: "green" as const },
       { label: "Despesas (acertos)", amount: totalDespesasAcertos, highlight: "red" as const },
+      { label: "Lucro líquido", amount: totalLucroLiquido, highlight: totalLucroLiquido >= 0 ? "green" as const : "red" as const },
     ]
     const periodLabel = `${new Date(inicio).toLocaleDateString()} a ${new Date(fim).toLocaleDateString()}`
     const html = await makeReportHTML({
       periodLabel,
       resumo,
       faturamentoAnual: faturamentoPorAno,
-      distribuicao: distribPorParticipante.map((d) => ({ nome: d.nome, total: d.total, qtdAcertos: d.qtdAcertos })),
+      distribuicao: distribPorParticipante.map((d) => ({ nome: d.nome, total: d.total, totalBruto: d.totalBruto, totalDespesasIndiv: d.totalDespesasIndiv, qtdAcertos: d.qtdAcertos })),
     })
     openPrintWindow(html, "Relatório")
   }
@@ -351,13 +367,14 @@ export default function RelatoriosPage() {
       { label: "Impostos pagos", amount: totalImpostos, highlight: "red" as const },
       { label: "Lucro bruto (linhas)", amount: totalLucroBruto, highlight: "green" as const },
       { label: "Despesas (acertos)", amount: totalDespesasAcertos, highlight: "red" as const },
+      { label: "Lucro líquido", amount: totalLucroLiquido, highlight: totalLucroLiquido >= 0 ? "green" as const : "red" as const },
     ]
     const periodLabel = `${new Date(inicio).toLocaleDateString()} a ${new Date(fim).toLocaleDateString()}`
     const html = await makeReportHTML({
       periodLabel,
       resumo,
       faturamentoAnual: faturamentoPorAno,
-      distribuicao: distribPorParticipante.map((d) => ({ nome: d.nome, total: d.total, qtdAcertos: d.qtdAcertos })),
+      distribuicao: distribPorParticipante.map((d) => ({ nome: d.nome, total: d.total, totalBruto: d.totalBruto, totalDespesasIndiv: d.totalDespesasIndiv, qtdAcertos: d.qtdAcertos })),
     })
     await downloadPDF(html, `Relatório_${periodLabel.replace(/\//g, '-')}`)
   }
@@ -523,14 +540,16 @@ export default function RelatoriosPage() {
                 <TableHeader className="sticky top-0 bg-background">
                   <TableRow>
                     <TableHead>Participante</TableHead>
-                    <TableHead className="text-right">Total recebido</TableHead>
+                    <TableHead className="text-right">Lucro bruto</TableHead>
+                    <TableHead className="text-right">Despesas indiv.</TableHead>
+                    <TableHead className="text-right">Lucro líquido</TableHead>
                     <TableHead className="text-right">Qtd. acertos</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {distribPorParticipante.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
                         Nenhuma distribuição no período.
                       </TableCell>
                     </TableRow>
@@ -538,7 +557,11 @@ export default function RelatoriosPage() {
                     distribPorParticipante.map((r) => (
                       <TableRow key={r.participanteId}>
                         <TableCell>{r.nome}</TableCell>
-                        <TableCell className="text-right">{fmtCurrency(r.total)}</TableCell>
+                        <TableCell className="text-right">{fmtCurrency(r.totalBruto)}</TableCell>
+                        <TableCell className="text-right text-red-600">{fmtCurrency(r.totalDespesasIndiv)}</TableCell>
+                        <TableCell className="text-right font-semibold" style={{ color: r.total >= 0 ? '#059669' : '#dc2626' }}>
+                          {fmtCurrency(r.total)}
+                        </TableCell>
                         <TableCell className="text-right">{r.qtdAcertos}</TableCell>
                       </TableRow>
                     ))
@@ -726,6 +749,12 @@ export default function RelatoriosPage() {
                   <TableRow>
                     <TableCell>Despesas (acertos)</TableCell>
                     <TableCell className="text-right">{fmtCurrency(totalDespesasAcertos)}</TableCell>
+                  </TableRow>
+                  <TableRow className="border-t-2 font-semibold">
+                    <TableCell>Lucro líquido</TableCell>
+                    <TableCell className={`text-right ${totalLucroLiquido >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {fmtCurrency(totalLucroLiquido)}
+                    </TableCell>
                   </TableRow>
                 </TableBody>
               </Table>

@@ -1,37 +1,20 @@
+version: '3.8'
+
 services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      - PORT=4523
-      - CORS_ORIGIN=http://frontend:4522,http://localhost:4522
-      - DB_PATH=/app/data/erp.sqlite
-      - NODE_ENV=production
+  erp-br:
+    build: .
+    container_name: erp-br-app
     ports:
-      - "4523:4523"
+      - "3145:3145"
     volumes:
-      - ./backend/data:/app/data
-    networks:
-      - erp-network
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+      - ./data:/app/data
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:4523
       - NODE_ENV=production
-      - PORT=4522
-    ports:
-      - "4522:4522"
-    depends_on:
-      - backend
-    networks:
-      - erp-network
+      - PORT=3145
     restart: unless-stopped
-
-networks:
-  erp-network:
-    driver: bridge
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3145/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

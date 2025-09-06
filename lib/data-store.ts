@@ -8,7 +8,7 @@ export type { Cliente, Produto, Pedido, Recebimento }
 export type ItemPedido = {
   produtoId: string
   quantidade: number
-  precoUnitario: number
+  valor_unitario: number
   custoUnitario: number
   taxaImposto: number
 }
@@ -53,16 +53,16 @@ export async function getRecebimentos() {
 
 /* Helpers for calculations used by Dashboard or other pages */
 export function totalPedido(p: Pedido) {
-  return p.itens.reduce((acc, i) => acc + Number(i.precoUnitario) * Number(i.quantidade), 0)
+  return p.itens.reduce((acc, i) => acc + Number(i.valor_unitario) * Number(i.quantidade), 0)
 }
 export function impostosPedido(p: Pedido) {
-  return p.itens.reduce((acc, i) => acc + Number(i.precoUnitario) * Number(i.quantidade) * Number(i.taxaImposto), 0)
+  return p.itens.reduce((acc, i) => acc + Number(i.valor_unitario) * Number(i.quantidade) * Number(i.taxaImposto), 0)
 }
 export function lucroPedido(p: Pedido) {
   return p.itens.reduce(
     (acc, i) =>
       acc +
-      (Number(i.precoUnitario) - Number(i.custoUnitario) - Number(i.precoUnitario) * Number(i.taxaImposto)) *
+      (Number(i.valor_unitario) - Number(i.custoUnitario) - Number(i.valor_unitario) * Number(i.taxaImposto)) *
         Number(i.quantidade),
     0,
   )
@@ -170,7 +170,7 @@ function isArrayOfObjects(a: unknown): a is Record<string, unknown>[] {
 
 export async function getBackup(): Promise<BackupPayload> {
   try {
-    const response = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:4523").replace(/\/$/, "")}/backup/export`, {
+    const response = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3145").replace(/\/$/, "")}/backup/export`, {
       method: "GET",
       credentials: "include"
     })
@@ -195,7 +195,7 @@ export async function getBackup(): Promise<BackupPayload> {
 export async function restoreBackup(payload: BackupPayload, opts?: { merge?: boolean }) {
   try {
     const merge = opts?.merge || false
-    const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4523").replace(/\/$/, "")
+    const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3145").replace(/\/$/, "")
     const url = `${apiUrl}/backup/import?merge=${merge ? "1" : "0"}`
     
     const response = await fetch(url, {

@@ -18,7 +18,22 @@ export type { OutroNegocio, PagamentoParcial }
 
 export async function loadOutrosNegocios(): Promise<OutroNegocio[]> {
   try {
-    return await api.outrosNegocios.list()
+    const negocios = await api.outrosNegocios.list();
+    
+    // Carregar pagamentos para cada negócio
+    const negociosComPagamentos = await Promise.all(
+      negocios.map(async (negocio) => {
+        try {
+          const pagamentos = await api.pagamentos.list(negocio.id);
+          return { ...negocio, pagamentos };
+        } catch (error) {
+          console.error(`Erro ao carregar pagamentos para negócio ${negocio.id}:`, error);
+          return { ...negocio, pagamentos: [] };
+        }
+      })
+    );
+    
+    return negociosComPagamentos;
   } catch (error) {
     console.error("Erro ao carregar outros negócios:", error)
     return []
@@ -57,14 +72,11 @@ export async function removeOutroNegocio(id: string): Promise<OutroNegocio[]> {
 
 export async function addPagamento(id: string, pagamento: PagamentoParcial): Promise<OutroNegocio[]> {
   try {
-    const items = await loadOutrosNegocios()
-    const item = items.find((i) => i.id === id)
-    if (item) {
-      const pagamentos = [...(item.pagamentos ?? []), pagamento].sort((a, b) =>
-        a.data < b.data ? -1 : a.data > b.data ? 1 : 0,
-      )
-      await api.outrosNegocios.update(id, { pagamentos })
-    }
+    await api.pagamentos.create({
+      outro_negocio_id: id,
+      data: pagamento.data,
+      valor: pagamento.valor
+    });
     return await loadOutrosNegocios()
   } catch (error) {
     console.error("Erro ao adicionar pagamento:", error)
@@ -74,12 +86,7 @@ export async function addPagamento(id: string, pagamento: PagamentoParcial): Pro
 
 export async function removePagamento(id: string, pagamentoId: string): Promise<OutroNegocio[]> {
   try {
-    const items = await loadOutrosNegocios()
-    const item = items.find((i) => i.id === id)
-    if (item) {
-      const pagamentos = (item.pagamentos ?? []).filter((p) => p.id !== pagamentoId)
-      await api.outrosNegocios.update(id, { pagamentos })
-    }
+    await api.pagamentos.delete(pagamentoId);
     return await loadOutrosNegocios()
   } catch (error) {
     console.error("Erro ao remover pagamento:", error)
@@ -103,12 +110,13 @@ export function diffFullMonths(fromISO: string, toISO: string): number {
 export interface AccrualResult {
   mesesTotais: number
   jurosAcumulados: number
-  saldoComJuros: number // saldo final (principal + juros - pagamentos aplicados ao longo do tempo)
+  multaAplicada: number // multa por atraso aplicada sobre o valor original
+  saldoComJuros: number // saldo final (principal + juros + multa - pagamentos aplicados ao longo do tempo)
   saldoPrincipalRestante: number // principal remanescente sem juros (apenas para referência)
 }
 
 /**
- * Calcula juros compostos mensais sobre o SALDO PENDENTE, respeitando pagamentos parciais no tempo.
+ * Calcula juros compostos mensais sobre o SALDO PENDENTE e multa por atraso, respeitando pagamentos parciais no tempo.
  * Algoritmo:
  *  - Ordena pagamentos por data.
  *  - A = principal.
@@ -116,7 +124,8 @@ export interface AccrualResult {
  *      - aplica juros compostos sobre A por m = meses completos do período.
  *      - se o evento é pagamento: A = max(0, A - valorPagamento).
  *  - No período final até "ateISO", aplica juros compostos e encerra.
- * Retorna juros acumulados (somatório de acréscimos) e o saldo final A.
+ *  - Calcula multa por atraso se configurada e há atraso no pagamento.
+ * Retorna juros acumulados, multa aplicada e o saldo final A.
  */
 export function calcularJurosCompostosComPagamentos(item: OutroNegocio, ateISO: string): AccrualResult {
   let A = item.valor // saldo que sofrerá juros
@@ -155,13 +164,29 @@ export function calcularJurosCompostosComPagamentos(item: OutroNegocio, ateISO: 
     mesesTotais += mFinal
   }
 
-  // saldo principal restante (sem juros): principal - totalPagamentos
+  // Calcula multa por atraso se configurada
+  let multaAplicada = 0
   const totalPagamentos = (item.pagamentos ?? []).reduce((acc, p) => acc + (p.valor || 0), 0)
   const saldoPrincipalRestante = Math.max(0, (item.valor || 0) - totalPagamentos)
+  
+  // Aplica multa se:
+  // 1. Multa está ativa
+  // 2. Há saldo pendente (não foi totalmente pago)
+  // 3. Há atraso (data atual > data original + pelo menos 1 mês)
+  if (item.multaAtiva && (item.multaPercent ?? 0) > 0 && saldoPrincipalRestante > 0) {
+    const mesesAtraso = diffFullMonths(item.data, ateISO)
+    if (mesesAtraso > 0) {
+      // Multa aplicada sobre o valor original
+      const multaPercent = (item.multaPercent as number) / 100
+      multaAplicada = (item.valor || 0) * multaPercent
+      A += multaAplicada
+    }
+  }
 
   return {
     mesesTotais,
     jurosAcumulados,
+    multaAplicada,
     saldoComJuros: Math.max(0, A),
     saldoPrincipalRestante,
   }
@@ -188,7 +213,7 @@ export function computeTotals(items: OutroNegocio[]) {
   let totalAbertoComJuros = 0
 
   items.forEach((i) => {
-    const { jurosAcumulados, saldoComJuros, saldoPrincipalRestante } = calcularJurosCompostosComPagamentos(i, todayISO)
+    const { jurosAcumulados, multaAplicada, saldoComJuros, saldoPrincipalRestante } = calcularJurosCompostosComPagamentos(i, todayISO)
     if (saldoComJuros > 0) {
       totalAbertoComJuros += saldoComJuros
       jurosPendentes += Math.max(0, saldoComJuros - saldoPrincipalRestante)

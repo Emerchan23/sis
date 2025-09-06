@@ -189,11 +189,11 @@ export default function DespesasEditor({
         <div className="mt-3 grid gap-3 md:grid-cols-3">
           <div>
             <Label>Total despesas de rateio</Label>
-            <Input readOnly value={fmtCurrency(totalRateio)} />
+            <Input readOnly value={fmtCurrency(totalRateio)} className="bg-red-100 border-red-200" />
           </div>
           <div>
             <Label>Total despesas individuais</Label>
-            <Input readOnly value={fmtCurrency(totalIndividuais)} />
+            <Input readOnly value={fmtCurrency(totalIndividuais)} className="bg-yellow-100 border-yellow-200" />
           </div>
         </div>
       </div>

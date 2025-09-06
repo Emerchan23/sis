@@ -39,7 +39,8 @@ import {
   type TipoOperacao,
   updateOutroNegocio,
 } from "@/lib/outros-negocios"
-import { CheckCheck, Edit, History, Plus, Trash2 } from "lucide-react"
+import { CheckCheck, Edit, History, Plus, Trash2, Download } from "lucide-react"
+import { makeOutroNegocioDocumentHTML, downloadPDF } from "@/lib/print"
 
 function formatBRL(v: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0)
@@ -57,6 +58,8 @@ type FormState = {
   data: string
   jurosAtivo: boolean
   jurosMesPercent: string
+  multaAtiva: boolean
+  multaPercent: string
 }
 
 type PaymentForm = {
@@ -85,6 +88,8 @@ export default function OutrosNegociosPage() {
     data: todayISO(),
     jurosAtivo: false,
     jurosMesPercent: "",
+    multaAtiva: false,
+    multaPercent: "",
   })
 
   const [payForm, setPayForm] = useState<PaymentForm>({ open: false, data: todayISO(), valor: "" })
@@ -132,6 +137,8 @@ export default function OutrosNegociosPage() {
       data: todayISO(),
       jurosAtivo: false,
       jurosMesPercent: "",
+      multaAtiva: false,
+      multaPercent: "",
     })
   }
 
@@ -143,13 +150,15 @@ export default function OutrosNegociosPage() {
   function openEdit(item: OutroNegocio) {
     setForm({
       id: item.id,
-      pessoa: item.pessoa,
+      pessoa: item.pessoa || "",
       tipo: item.tipo,
-      descricao: item.descricao,
+      descricao: item.descricao || "",
       valor: String(item.valor ?? ""),
-      data: item.data,
-      jurosAtivo: item.jurosAtivo,
+      data: item.data || todayISO(),
+      jurosAtivo: item.jurosAtivo || false,
       jurosMesPercent: String(item.jurosMesPercent ?? ""),
+      multaAtiva: item.multaAtiva || false,
+      multaPercent: String(item.multaPercent ?? ""),
     })
     setOpenItem(true)
   }
@@ -157,13 +166,15 @@ export default function OutrosNegociosPage() {
   async function handleSaveItem() {
     const payload: OutroNegocio = {
       id: form.id ?? generateId(),
-      pessoa: form.pessoa.trim(),
+      pessoa: (form.pessoa || "").trim(),
       tipo: form.tipo,
-      descricao: form.descricao.trim(),
+      descricao: (form.descricao || "").trim(),
       valor: Number(form.valor || 0),
       data: form.data,
       jurosAtivo: form.jurosAtivo,
       jurosMesPercent: form.jurosAtivo ? Number(form.jurosMesPercent || 0) : 0,
+      multaAtiva: form.multaAtiva,
+      multaPercent: form.multaAtiva ? Number(form.multaPercent || 0) : 0,
       pagamentos: isEditing ? (items.find((x) => x.id === form.id)?.pagamentos ?? []) : [],
     }
 
@@ -174,10 +185,29 @@ export default function OutrosNegociosPage() {
 
     try {
       let next: OutroNegocio[]
+      // Mapear campos para o formato esperado pela API (excluir campos que não existem na tabela)
+      const apiPayload = {
+        tipo: payload.tipo,
+        descricao: payload.descricao,
+        valor: payload.valor,
+        data_transacao: payload.data,
+        cliente_id: payload.pessoa,
+        categoria: null,
+        forma_pagamento: null,
+        observacoes: null,
+        anexos: null,
+        juros_ativo: payload.jurosAtivo ? 1 : 0,
+        juros_mes_percent: payload.jurosAtivo ? Number(payload.jurosMesPercent || 0) : 0,
+        multa_ativa: payload.multaAtiva ? 1 : 0,
+        multa_percent: payload.multaAtiva ? Number(payload.multaPercent || 0) : 0
+      }
+      
       if (isEditing) {
-        next = await updateOutroNegocio(payload.id, payload)
+        await api.outrosNegocios.update(payload.id, apiPayload)
+        next = await loadOutrosNegocios()
       } else {
-        next = await addOutroNegocio(payload)
+        await api.outrosNegocios.create(apiPayload)
+        next = await loadOutrosNegocios()
       }
       setItems(next)
       setOpenItem(false)
@@ -241,19 +271,26 @@ export default function OutrosNegociosPage() {
     }
   }
 
-  async function limparTudo() {
-    if (!confirm("Apagar TODOS os lançamentos desta aba?")) return
+  // Função para baixar documento PDF
+  async function baixarDocumentoPDF(item: OutroNegocio) {
     try {
-      // Remove todos os itens individualmente
-      for (const item of items) {
-        await removeOutroNegocio(item.id)
-      }
-      setItems([])
+      const today = todayISO()
+      const saldoAtual = calcularJurosCompostosComPagamentos(item, today)
+      
+      const html = makeOutroNegocioDocumentHTML({
+        negocio: item,
+        saldoAtual
+      })
+      
+      const filename = `${item.tipo}-${item.pessoa.replace(/[^a-zA-Z0-9]/g, '_')}-${item.data}`
+      await downloadPDF(html, filename)
     } catch (error) {
-      console.error("Erro ao limpar dados:", error)
-      alert("Erro ao limpar dados. Tente novamente.")
+      console.error('Erro ao gerar PDF:', error)
+      alert('Erro ao gerar documento PDF. Tente novamente.')
     }
   }
+
+
 
   return (
     <main className="min-h-screen bg-white">
@@ -346,6 +383,30 @@ export default function OutrosNegociosPage() {
                     value={form.jurosMesPercent}
                     onChange={(value) => setForm((f) => ({ ...f, jurosMesPercent: value }))}
                     disabled={!form.jurosAtivo}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="flex items-center justify-between">
+                    <span>Multa por atraso</span>
+                    <Switch
+                      checked={form.multaAtiva}
+                      onCheckedChange={(v) => setForm((f) => ({ ...f, multaAtiva: v }))}
+                    />
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Multa aplicada sobre o valor original quando há atraso no pagamento
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="multa">% multa</Label>
+                  <CurrencyInput
+                    id="multa"
+                    placeholder="Ex.: 10,0"
+                    value={form.multaPercent}
+                    onChange={(value) => setForm((f) => ({ ...f, multaPercent: value }))}
+                    disabled={!form.multaAtiva}
                   />
                 </div>
               </div>
@@ -447,7 +508,7 @@ export default function OutrosNegociosPage() {
                   ) : (
                     filtered.map((i) => {
                       const today = todayISO()
-                      const { mesesTotais, jurosAcumulados, saldoComJuros, saldoPrincipalRestante } =
+                      const { mesesTotais, jurosAcumulados, multaAplicada, saldoComJuros, saldoPrincipalRestante } =
                         calcularJurosCompostosComPagamentos(i, today)
                       const totalPagamentos = (i.pagamentos ?? []).reduce((a, p) => a + (p.valor || 0), 0)
                       const statusPago = saldoComJuros <= 0.000001
@@ -552,6 +613,14 @@ export default function OutrosNegociosPage() {
                                   Pagar
                                 </Button>
                               )}
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                onClick={() => baixarDocumentoPDF(i)} 
+                                title="Baixar documento PDF"
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
                               <Button size="icon" variant="ghost" onClick={() => openEdit(i)} title="Editar">
                                 <Edit className="h-4 w-4" />
                               </Button>
@@ -578,13 +647,7 @@ export default function OutrosNegociosPage() {
               </Table>
             </div>
 
-            {items.length > 0 && (
-              <div className="mt-4 flex justify-end">
-                <Button variant="destructive" onClick={limparTudo}>
-                  Limpar tudo
-                </Button>
-              </div>
-            )}
+
           </CardContent>
         </Card>
       </div>

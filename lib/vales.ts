@@ -25,7 +25,7 @@ function dispatchChange() {
 
 export async function getMovimentos(): Promise<ValeMovimento[]> {
   try {
-    const response = await api.get('/vale-movimentos')
+    const response = await api.get('/api/vales')
     return response
   } catch (error) {
     console.error('Erro ao buscar movimentos:', error)
@@ -35,7 +35,7 @@ export async function getMovimentos(): Promise<ValeMovimento[]> {
 
 export async function getMovimentosDoCliente(clienteId: string): Promise<ValeMovimento[]> {
   try {
-    const response = await api.get(`/vale-movimentos/cliente/${clienteId}`)
+    const response = await api.get(`/api/vales?cliente_id=${clienteId}`)
     return response
   } catch (error) {
     console.error('Erro ao buscar movimentos do cliente:', error)
@@ -45,10 +45,20 @@ export async function getMovimentosDoCliente(clienteId: string): Promise<ValeMov
 
 export async function deleteMovimento(id: string): Promise<void> {
   try {
-    await api.delete(`/vale-movimentos/${id}`)
+    await api.delete(`/api/vales/${id}`)
     dispatchChange()
   } catch (error) {
     console.error('Erro ao deletar movimento:', error)
+    throw error
+  }
+}
+
+export async function deleteMovimentosDoCliente(clienteId: string): Promise<void> {
+  try {
+    await api.delete(`/api/vales?cliente_id=${clienteId}`)
+    dispatchChange()
+  } catch (error) {
+    console.error('Erro ao deletar movimentos do cliente:', error)
     throw error
   }
 }
@@ -63,7 +73,7 @@ export async function addCredito(clienteId: string, valor: number, descricao?: s
   }
   
   try {
-    const result = await api.post('/vale-movimentos', movimento)
+    const result = await api.post('/api/vales', movimento)
     dispatchChange()
     return { ...movimento, id: result.id }
   } catch (error) {
@@ -82,7 +92,7 @@ export async function abaterCredito(clienteId: string, valor: number, descricao?
   }
   
   try {
-    const result = await api.post('/vale-movimentos', movimento)
+    const result = await api.post('/api/vales', movimento)
     dispatchChange()
     return { ...movimento, id: result.id }
   } catch (error) {
@@ -93,7 +103,7 @@ export async function abaterCredito(clienteId: string, valor: number, descricao?
 
 export async function getSaldoCliente(clienteId: string): Promise<number> {
   try {
-    const saldos = await api.get('/vale-saldos')
+    const saldos = await api.get('/api/vales?saldos=true')
     return saldos[clienteId] || 0
   } catch (error) {
     console.error('Erro ao buscar saldo do cliente:', error)
@@ -103,7 +113,7 @@ export async function getSaldoCliente(clienteId: string): Promise<number> {
 
 export async function getSaldosPorCliente(): Promise<Record<string, number>> {
   try {
-    const saldos = await api.get('/vale-saldos')
+    const saldos = await api.get('/api/vales?saldos=true')
     return saldos
   } catch (error) {
     console.error('Erro ao buscar saldos:', error)

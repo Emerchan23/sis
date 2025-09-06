@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
+import { Trash2, Plus, Minus, FileText, Download } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { ensureInit, getClientes, type Cliente } from "@/lib/data-store"
 import {
@@ -19,8 +21,10 @@ import {
   getSaldosPorCliente,
   getMovimentosDoCliente,
   deleteMovimento,
+  deleteMovimentosDoCliente,
   type ValeMovimento,
 } from "@/lib/vales"
+import { makeValeDocumentHTML, makeExtratoValeHTML, downloadPDF } from "@/lib/print"
 
 function brl(n: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n || 0)
@@ -144,6 +148,68 @@ export default function ValesPage() {
     }
   }
 
+  async function onDeleteMovimentosDoCliente(clienteId: string, clienteNome: string) {
+    try {
+      if (!confirm(`Tem certeza que deseja deletar todos os movimentos de ${clienteNome}? Esta ação não pode ser desfeita.`)) {
+        return
+      }
+      
+      await deleteMovimentosDoCliente(clienteId)
+      toast({ title: "Todos os movimentos do cliente foram deletados com sucesso." })
+      setRefreshTick((t) => t + 1)
+    } catch (e: any) {
+      toast({ title: e?.message || "Erro ao deletar movimentos do cliente." })
+    }
+  }
+
+
+
+  // Função para baixar documento de vale como PDF
+  async function baixarDocumentoVale(cliente: Cliente) {
+    try {
+      const movimentos = await getMovimentosDoCliente(cliente.id)
+      const saldo = await getSaldoCliente(cliente.id)
+      
+      const html = makeValeDocumentHTML({
+        cliente: {
+          nome: cliente.nome,
+          cnpj: cliente.documento,
+          cpf: cliente.documento
+        },
+        saldo,
+        movimentos
+      })
+      
+      await downloadPDF(html, `Vale_${cliente.nome}`)
+    } catch (error) {
+      console.error('Erro ao baixar documento de vale:', error)
+      toast({ title: "Erro ao baixar documento de vale" })
+    }
+  }
+
+
+
+  // Função para baixar extrato de despesas como PDF
+  async function baixarExtratoDespesas(cliente: Cliente) {
+    try {
+      const movimentos = await getMovimentosDoCliente(cliente.id)
+      
+      const html = makeExtratoValeHTML({
+        cliente: {
+          nome: cliente.nome,
+          cnpj: cliente.documento,
+          cpf: cliente.documento
+        },
+        movimentos
+      })
+      
+      await downloadPDF(html, `Extrato_Despesas_${cliente.nome}`)
+    } catch (error) {
+      console.error('Erro ao baixar extrato de despesas:', error)
+      toast({ title: "Erro ao baixar extrato de despesas" })
+    }
+  }
+
   return (
     <div className="min-h-screen">
       <AppHeader />
@@ -160,17 +226,17 @@ export default function ValesPage() {
               </TabsList>
 
               <TabsContent value="add" className="mt-4">
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-[2fr_1fr]">
                   <div className="grid gap-2">
                     <Label>Cliente</Label>
                     <Select value={clienteCredito} onValueChange={setClienteCredito}>
-                      <SelectTrigger>
+                      <SelectTrigger className="max-w-full">
                         <SelectValue placeholder="Selecione um cliente" />
                       </SelectTrigger>
                       <SelectContent>
                         {clientes.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
-                            {c.nome} {c.documento ? `• ${c.documento}` : ""}
+                            <span className="truncate">{c.nome} {c.documento ? `• ${c.documento}` : ""}</span>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -183,6 +249,7 @@ export default function ValesPage() {
                       placeholder="0,00"
                       value={valorCredito}
                       onChange={(e) => setValorCredito(e.target.value)}
+                      className="min-w-[150px]"
                     />
                   </div>
                   <div className="grid gap-2 md:col-span-3">
@@ -200,17 +267,17 @@ export default function ValesPage() {
               </TabsContent>
 
               <TabsContent value="use" className="mt-4">
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-[2fr_1fr]">
                   <div className="grid gap-2">
                     <Label>Cliente</Label>
                     <Select value={clienteDebito} onValueChange={setClienteDebito}>
-                      <SelectTrigger>
+                      <SelectTrigger className="max-w-full">
                         <SelectValue placeholder="Selecione um cliente" />
                       </SelectTrigger>
                       <SelectContent>
                         {clientes.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
-                            {c.nome} {c.documento ? `• ${c.documento}` : ""}
+                            <span className="truncate">{c.nome} {c.documento ? `• ${c.documento}` : ""}</span>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -228,6 +295,7 @@ export default function ValesPage() {
                       placeholder="0,00"
                       value={valorDebito}
                       onChange={(e) => setValorDebito(e.target.value)}
+                      className="min-w-[150px]"
                     />
                   </div>
                   <div className="grid gap-2 md:col-span-3">
@@ -278,22 +346,51 @@ export default function ValesPage() {
               <TableBody>
                 {saldos.map((c) => (
                   <TableRow key={c.id}>
-                    <TableCell className="font-medium">{c.nome}</TableCell>
+                    <TableCell className="font-medium max-w-[200px] truncate" title={c.nome}>{c.nome}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{c.documento || "-"}</TableCell>
                     <TableCell className="text-right font-medium">{brl(c.saldo)}</TableCell>
                     <TableCell className="text-right">
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button size="sm" variant="outline" className="bg-transparent">
-                            Extrato
-                          </Button>
-                        </DialogTrigger>
-                        <ExtratoDialog
-                          clienteId={c.id}
-                          clienteNome={c.nome}
-                          onChanged={() => setRefreshTick((t) => t + 1)}
-                        />
-                      </Dialog>
+                      <div className="flex gap-2">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button size="sm" variant="outline" className="bg-transparent">
+                              Extrato
+                            </Button>
+                          </DialogTrigger>
+                          <ExtratoDialog
+                            clienteId={c.id}
+                            clienteNome={c.nome}
+                            onChanged={() => setRefreshTick((t) => t + 1)}
+                          />
+                        </Dialog>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => baixarDocumentoVale({...c, createdAt: new Date().toISOString()})}
+                          title="Baixar documento de vale (PDF)"
+                        >
+                          <Download className="h-4 w-4 mr-1" />
+                          Vale
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => baixarExtratoDespesas({...c, createdAt: new Date().toISOString()})}
+                          title="Baixar extrato de despesas (PDF)"
+                        >
+                          <Download className="h-4 w-4 mr-1" />
+                          Despesas
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onDeleteMovimentosDoCliente(c.id, c.nome)}
+                          title="Deletar todos os movimentos do cliente"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

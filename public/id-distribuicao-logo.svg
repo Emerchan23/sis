@@ -1,0 +1,17 @@
+<svg width="120" height="80" viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2563eb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1d4ed8;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="60" cy="40" r="35" fill="url(#gradient)" stroke="#1e40af" stroke-width="2"/>
+  
+  <!-- ID text -->
+  <text x="60" y="35" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white" text-anchor="middle">ID</text>
+  
+  <!-- DISTRIBUIÇÃO text -->
+  <text x="60" y="52" font-family="Arial, sans-serif" font-size="8" font-weight="600" fill="white" text-anchor="middle" letter-spacing="1px">DISTRIBUIÇÃO</text>
+</svg>

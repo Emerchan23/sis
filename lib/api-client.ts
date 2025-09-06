@@ -1,6 +1,55 @@
 "use client"
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4523").replace(/\/$/, "")
+// Função para detectar automaticamente a URL da API em qualquer ambiente
+function getApiUrl(): string {
+  // Se estiver no servidor (SSR)
+  if (typeof window === 'undefined') {
+    // Em Docker ou produção, use variável de ambiente se definida
+    if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL !== "http://localhost:3145") {
+      console.log('🔧 [SSR] Usando NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL)
+      return process.env.NEXT_PUBLIC_API_URL
+    }
+    
+    // Detectar se está rodando em Docker
+    if (process.env.DOCKER_ENV === 'true' || process.env.NODE_ENV === 'production') {
+      const url = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3145"
+      console.log('🐳 [SSR] Modo Docker/Produção, URL:', url)
+      return url
+    }
+    
+    console.log('🔧 [SSR] Modo desenvolvimento, URL: http://localhost:3145')
+    return "http://localhost:3145"
+  }
+  
+  // No cliente (navegador)
+  // Se NEXT_PUBLIC_API_URL estiver definida e não for localhost, use ela (para casos específicos)
+  if (process.env.NEXT_PUBLIC_API_URL && 
+      process.env.NEXT_PUBLIC_API_URL !== "http://localhost:3145" &&
+      !process.env.NEXT_PUBLIC_API_URL.includes('localhost')) {
+    console.log('🌐 [Cliente] Usando NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL)
+    return process.env.NEXT_PUBLIC_API_URL
+  }
+  
+  // Detecção automática baseada no navegador
+  const protocol = window.location.protocol
+  const hostname = window.location.hostname
+  const port = "3145"
+  
+  // Se estiver acessando via localhost, use localhost
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    const url = `${protocol}//localhost:${port}`
+    console.log('🏠 [Cliente] Detectado localhost, URL:', url)
+    return url
+  }
+  
+  // Para qualquer outro hostname (IP da rede, domínio, Docker, etc.)
+  const url = `${protocol}//${hostname}:${port}`
+  console.log('🌍 [Cliente] Detectado hostname externo, URL:', url)
+  return url
+}
+
+const API_URL = getApiUrl().replace(/\/$/, "")
+console.log('🚀 API_URL configurada:', API_URL)
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
@@ -12,11 +61,14 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     headers["content-type"] = "application/json"
   }
   
+  const fullUrl = `${API_URL}${path}`
+  console.log(`🌐 Fazendo requisição para: ${fullUrl}`)
+  
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+  const timeoutId = setTimeout(() => controller.abort(), 15000) // Increased to 15 second timeout
   
   try {
-    const res = await fetch(`${API_URL}${path}`, {
+    const res = await fetch(fullUrl, {
       ...init,
       credentials: "include",
       headers,
@@ -24,16 +76,35 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     })
     clearTimeout(timeoutId)
     
+    console.log(`✅ Resposta recebida para ${path}: ${res.status} ${res.statusText}`)
+    
     if (!res.ok) {
       const text = await res.text().catch(() => "")
+      console.error(`❌ HTTP Error ${res.status} for ${path}:`, text)
       throw new Error(`HTTP ${res.status} ${res.statusText} - ${text}`)
     }
     return (await res.json()) as T
   } catch (error) {
     clearTimeout(timeoutId)
+    console.error(`❌ Erro na requisição para ${fullUrl}:`, error)
+    
     if (error instanceof Error && error.name === 'AbortError') {
+      console.error('⏰ Timeout na requisição')
       throw new Error('Request timeout - verifique a conexão com o servidor')
     }
+    
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      console.error('🔌 Erro de conectividade detectado')
+      console.error('🔍 Detalhes do erro:', {
+        url: fullUrl,
+        apiUrl: API_URL,
+        path: path,
+        hostname: typeof window !== 'undefined' ? window.location.hostname : 'SSR',
+        protocol: typeof window !== 'undefined' ? window.location.protocol : 'SSR'
+      })
+      throw new Error(`Erro de conectividade - não foi possível conectar ao servidor em ${API_URL}`)
+    }
+    
     throw error
   }
 }
@@ -56,7 +127,7 @@ export type PedidoItem = {
   produtoId: string
   produto?: Produto
   quantidade: number
-  precoUnitario: number
+  valor_unitario: number
   custoUnitario: number
   taxaImposto: number
   desconto?: number
@@ -76,6 +147,7 @@ export type DashboardTotals = {
   totalRecebido: number
   totalAReceber: number
   lucroTotal: number
+  lucroLiquido: number
   impostosTotais: number
   totalVendas: number
   pendentes: number
@@ -154,6 +226,7 @@ export type Acerto = {
   titulo?: string
   observacoes?: string
   linhaIds: string[]
+  linhas?: LinhaVenda[]
   totalLucro: number
   totalDespesasRateio: number
   totalDespesasIndividuais: number
@@ -208,6 +281,8 @@ export type OutroNegocio = {
   data: string
   jurosAtivo: boolean
   jurosMesPercent?: number
+  multaAtiva?: boolean
+  multaPercent?: number
   pagamentos: PagamentoParcial[]
 }
 
@@ -218,13 +293,15 @@ export type Modalidade = {
 
 export type OrcamentoItem = {
   id: string
-  produtoId: string
+  produto_id: string
   produto?: Produto
   descricao: string
   marca?: string
   quantidade: number
-  precoUnitario: number
+  valor_unitario: number
   desconto?: number
+  link_ref?: string | null
+  custo_ref?: number | null
 }
 
 export type OrcamentoCliente = {
@@ -238,11 +315,12 @@ export type OrcamentoCliente = {
 
 export type Orcamento = {
   id: string
-  numero: number
+  numero: string
   data: string
   cliente: OrcamentoCliente
   itens: OrcamentoItem[]
   observacoes?: string | null
+  status?: string
   createdAt: string
   updatedAt: string
 }
@@ -250,18 +328,14 @@ export type Orcamento = {
 // Funções auxiliares para o dashboard
 export async function getDashboardTotals(): Promise<DashboardTotals> {
   try {
-    // Adicionar timestamp para evitar cache
-    const timestamp = Date.now()
-    console.log('🔄 Fazendo requisição para dashboard/totals com timestamp:', timestamp)
-    const result = await http<DashboardTotals>(`/dashboard/totals?_t=${timestamp}`)
-    console.log('✅ Dados recebidos do dashboard:', result)
-    return result
+    return await api.dashboard.totals()
   } catch (error) {
     console.error("❌ Erro ao obter totais do dashboard:", error)
     return {
       totalRecebido: 0,
       totalAReceber: 0,
       lucroTotal: 0,
+      lucroLiquido: 0,
       impostosTotais: 0,
       totalVendas: 0,
       pendentes: 0,
@@ -269,7 +343,7 @@ export async function getDashboardTotals(): Promise<DashboardTotals> {
   }
 }
 
-export async function getDashboardSeries(): Promise<{ name: string; vendas: number; lucros: number; impostos: number }[]> {
+export async function getDashboardSeries(): Promise<{ name: string; vendas: number; lucros: number; impostos: number; despesas: number; lucroLiquido: number }[]> {
   try {
     return await api.dashboard.series()
   } catch (error) {
@@ -287,7 +361,7 @@ export async function getDashboardSummary(): Promise<{ totalClientes: number; to
   }
 }
 
-export async function getDashboardAlerts(): Promise<{ id: string; tipo: string; descricao: string; data: string; valor: number }[]> {
+export async function getDashboardAlerts(): Promise<{ id: string; type: string; title: string; message: string; timestamp: string }[]> {
   try {
     return await api.dashboard.alerts()
   } catch (error) {
@@ -326,13 +400,13 @@ export async function getRecebimentos(): Promise<Recebimento[]> {
 // Exportar a API principal
 export const api = {
   clientes: {
-    list: () => http<Cliente[]>("/clientes"),
-    get: (id: string) => http<Cliente>(`/clientes/${id}`),
+    list: () => http<Cliente[]>("/api/clientes"),
+    get: (id: string) => http<Cliente>(`/api/clientes/${id}`),
     create: (data: Partial<Cliente>) =>
-      http<{ id: string }>("/clientes", { method: "POST", body: JSON.stringify(data) }),
+      http<{ id: string }>("/api/clientes", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Cliente>) =>
-      http<{ ok: true }>(`/clientes/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-    delete: (id: string) => http<{ ok: true }>(`/clientes/${id}`, { method: "DELETE" }),
+      http<{ ok: true }>(`/api/clientes/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) => http<{ ok: true }>(`/api/clientes/${id}`, { method: "DELETE" }),
   },
   pedidos: {
     list: () => http<Pedido[]>("/pedidos"),
@@ -353,113 +427,123 @@ export const api = {
     delete: (id: string) => http<{ ok: true }>(`/recebimentos/${id}`, { method: "DELETE" }),
   },
   produtos: {
-    list: () => http<Produto[]>("/produtos"),
-    get: (id: string) => http<Produto>(`/produtos/${id}`),
+    list: () => http<Produto[]>("/api/produtos"),
+    get: (id: string) => http<Produto>(`/api/produtos/${id}`),
     create: (data: Partial<Produto>) =>
-      http<{ id: string }>("/produtos", { method: "POST", body: JSON.stringify(data) }),
+      http<{ id: string }>("/api/produtos", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Produto>) =>
-      http<{ ok: true }>(`/produtos/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-    delete: (id: string) => http<{ ok: true }>(`/produtos/${id}`, { method: "DELETE" }),
+      http<{ ok: true }>(`/api/produtos/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) => http<{ ok: true }>(`/api/produtos/${id}`, { method: "DELETE" }),
   },
   dashboard: {
-    totals: () => http<DashboardTotals>("/dashboard/totals"),
-    series: () => http<{ name: string; vendas: number; lucros: number; impostos: number }[]>("/dashboard/series"),
-    summary: () => http<{ totalClientes: number; totalPedidos: number; pedidosPendentes: number }>("/dashboard/summary"),
-    alerts: () => http<{ id: string; tipo: string; descricao: string; data: string; valor: number }[]>("/dashboard/alerts"),
+    totals: () => http<DashboardTotals>("/api/dashboard/totals"),
+    series: () => http<{ name: string; vendas: number; lucros: number; impostos: number; despesas: number; lucroLiquido: number }[]>("/api/dashboard/series"),
+    summary: () => http<{ totalClientes: number; totalPedidos: number; pedidosPendentes: number }>("/api/dashboard/summary"),
+    alerts: () => http<{ id: string; type: string; title: string; message: string; timestamp: string }[]>("/api/dashboard/alerts"),
   },
   empresas: {
-    list: () => http<{ id: string; nome: string }[]>("/empresas"),
+    list: () => http<{ id: string; nome: string }[]>("/api/empresas"),
     create: (data: { nome: string }) =>
-      http<{ id: string }>("/empresas", { method: "POST", body: JSON.stringify(data) }),
+      http<{ id: string }>("/api/empresas", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: { nome: string }) =>
-      http<{ ok: true }>(`/empresas/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+      http<{ ok: true }>(`/api/empresas/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     config: {
-      get: (empresaId: string) => http<any | null>(`/empresa-config/${empresaId}`),
+      get: (empresaId: string) => http<any | null>(`/api/empresa-config/${empresaId}`),
       set: (empresaId: string, cfg: any) =>
-        http<{ ok: true }>(`/empresa-config/${empresaId}`, { method: "PUT", body: JSON.stringify(cfg) }),
+        http<{ ok: true }>(`/api/empresa-config/${empresaId}`, { method: "PUT", body: JSON.stringify(cfg) }),
     },
     prefs: {
-      get: () => http<any>("/user-prefs"),
-      set: (data: any) => http<{ ok: true }>("/user-prefs", { method: "PUT", body: JSON.stringify(data) }),
+      get: () => http<any>("/api/user-prefs"),
+      set: (data: any) => http<{ ok: true }>("/api/user-prefs", { method: "PUT", body: JSON.stringify(data) }),
     },
-    delete: (id: string) => http<{ ok: true }>(`/empresas/${id}`, { method: "DELETE" }),
+    delete: (id: string) => http<{ ok: true }>(`/api/empresas/${id}`, { method: "DELETE" }),
   },
   linhas: {
-    list: () => http<LinhaVenda[]>("/linhas-venda"),
+    list: () => http<LinhaVenda[]>("/api/linhas"),
     create: (data: Partial<LinhaVenda>) =>
-      http<{ id: string }>("/linhas-venda", { method: "POST", body: JSON.stringify(data) }),
+      http<{ id: string }>("/api/linhas", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<LinhaVenda>) =>
-      http<{ ok: true }>(`/linhas-venda/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-    delete: (id: string) => http<{ ok: true }>(`/linhas-venda/${id}`, { method: "DELETE" }),
+      http<{ ok: true }>(`/api/linhas/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (id: string) => http<{ ok: true }>(`/api/linhas/${id}`, { method: "DELETE" }),
     updateCor: (id: string, cor: string | null) =>
-      http<{ ok: true }>(`/linhas-venda/${id}/cor`, { method: "PATCH", body: JSON.stringify({ cor }) }),
+      http<{ ok: true }>(`/api/linhas/${id}/cor`, { method: "PATCH", body: JSON.stringify({ cor }) }),
   },
   modalidades: {
-    list: () => http<Modalidade[]>("/modalidades"),
-    get: (id: string) => http<Modalidade>(`/modalidades/${id}`),
+    list: () => http<Modalidade[]>("/api/modalidades"),
+    get: (id: string) => http<Modalidade>(`/api/modalidades/${id}`),
     create: (data: Partial<Modalidade>) =>
-      http<{ id: string }>("/modalidades", { method: "POST", body: JSON.stringify(data) }),
+      http<{ id: string }>("/api/modalidades", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Modalidade>) =>
-      http<{ ok: true }>(`/modalidades/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-    delete: (id: string) => http<{ ok: true }>(`/modalidades/${id}`, { method: "DELETE" }),
+      http<{ ok: true }>(`/api/modalidades/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) => http<{ ok: true }>(`/api/modalidades/${id}`, { method: "DELETE" }),
   },
   rates: {
     capital: {
-      list: () => http<Rate[]>("/rates/capital"),
+      list: () => http<Rate[]>("/api/taxas?tipo=capital"),
       create: (data: Partial<Rate>) =>
-        http<{ id: string }>("/rates/capital", { method: "POST", body: JSON.stringify(data) }),
+        http<{ id: string }>("/api/taxas", { method: "POST", body: JSON.stringify({...data, tipo: "capital"}) }),
       update: (id: string, data: Partial<Rate>) =>
-        http<{ ok: true }>(`/rates/capital/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-      delete: (id: string) => http<{ ok: true }>(`/rates/capital/${id}`, { method: "DELETE" }),
+        http<{ ok: true }>(`/api/taxas/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+      delete: (id: string) => http<{ ok: true }>(`/api/taxas/${id}`, { method: "DELETE" }),
     },
     imposto: {
-      list: () => http<Rate[]>("/rates/imposto"),
+      list: () => http<Rate[]>("/api/taxas?tipo=imposto"),
       create: (data: Partial<Rate>) =>
-        http<{ id: string }>("/rates/imposto", { method: "POST", body: JSON.stringify(data) }),
+        http<{ id: string }>("/api/taxas", { method: "POST", body: JSON.stringify({...data, tipo: "imposto"}) }),
       update: (id: string, data: Partial<Rate>) =>
-        http<{ ok: true }>(`/rates/imposto/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-      delete: (id: string) => http<{ ok: true }>(`/rates/imposto/${id}`, { method: "DELETE" }),
+        http<{ ok: true }>(`/api/taxas/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+      delete: (id: string) => http<{ ok: true }>(`/api/taxas/${id}`, { method: "DELETE" }),
     },
   },
   participantes: {
-    list: () => http<Participante[]>("/participantes"),
+    list: () => http<Participante[]>("/api/participantes"),
     create: (data: Partial<Participante>) =>
-      http<{ id: string }>("/participantes", { method: "POST", body: JSON.stringify(data) }),
+      http<{ id: string }>("/api/participantes", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Participante>) =>
-      http<{ ok: true }>(`/participantes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-    delete: (id: string) => http<{ ok: true }>(`/participantes/${id}`, { method: "DELETE" }),
+      http<{ ok: true }>(`/api/participantes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (id: string) => http<{ ok: true }>(`/api/participantes/${id}`, { method: "DELETE" }),
   },
   acertos: {
-    list: () => http<Acerto[]>("/acertos"),
+    list: () => http<Acerto[]>("/api/acertos"),
     create: (data: Partial<Acerto>) =>
-      http<{ id: string }>("/acertos", { method: "POST", body: JSON.stringify(data) }),
+      http<{ id: string }>("/api/acertos", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Acerto>) =>
-      http<{ ok: true }>(`/acertos/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-    delete: (id: string) => http<{ ok: true }>(`/acertos/${id}`, { method: "DELETE" }),
+      http<{ ok: true }>(`/api/acertos/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (id: string) => http<{ ok: true }>(`/api/acertos/${id}`, { method: "DELETE" }),
+    cancel: (id: string) => http<{ ok: true; message: string; vendasRetornadas: number }>(`/api/acertos/${id}/cancel`, { method: "POST" }),
   },
   despesasPendentes: {
-    list: () => http<DespesaPendente[]>("/despesas-pendentes"),
+    list: () => http<DespesaPendente[]>("/api/despesas-pendentes"),
     create: (data: Partial<DespesaPendente>) =>
-      http<{ id: string }>("/despesas-pendentes", { method: "POST", body: JSON.stringify(data) }),
+      http<{ id: string }>("/api/despesas-pendentes", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<DespesaPendente>) =>
-      http<{ ok: true }>(`/despesas-pendentes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-    delete: (id: string) => http<{ ok: true }>(`/despesas-pendentes/${id}`, { method: "DELETE" }),
+      http<{ ok: true }>(`/api/despesas-pendentes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (id: string) => http<{ ok: true }>(`/api/despesas-pendentes/${id}`, { method: "DELETE" }),
   },
   orcamentos: {
-    list: () => http<Orcamento[]>("/orcamentos"),
+    list: () => http<Orcamento[]>("/api/orcamentos?incluir_itens=true"),
     create: (data: Partial<Orcamento>) =>
-      http<{ id: string; numero: number }>("/orcamentos", { method: "POST", body: JSON.stringify(data) }),
+      http<{ id: string; numero: number }>("/api/orcamentos", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Orcamento>) =>
-      http<{ ok: true }>(`/orcamentos/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-    delete: (id: string) => http<{ ok: true }>(`/orcamentos/${id}`, { method: "DELETE" }),
+      http<{ ok: true }>(`/api/orcamentos/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (id: string) => http<{ ok: true }>(`/api/orcamentos/${id}`, { method: "DELETE" }),
   },
   outrosNegocios: {
-    list: () => http<OutroNegocio[]>("/outros-negocios"),
+    list: () => http<OutroNegocio[]>("/api/outros-negocios"),
     create: (data: Partial<OutroNegocio>) =>
-      http<{ id: string }>("/outros-negocios", { method: "POST", body: JSON.stringify(data) }),
+      http<{ id: string }>("/api/outros-negocios", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<OutroNegocio>) =>
-      http<{ ok: true }>(`/outros-negocios/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-    delete: (id: string) => http<{ ok: true }>(`/outros-negocios/${id}`, { method: "DELETE" }),
+      http<{ ok: true }>(`/api/outros-negocios/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) => http<{ ok: true }>(`/api/outros-negocios/${id}`, { method: "DELETE" }),
+  },
+  pagamentos: {
+    list: (outroNegocioId?: string) => {
+      const params = outroNegocioId ? `?outro_negocio_id=${outroNegocioId}` : '';
+      return http<PagamentoParcial[]>(`/api/pagamentos${params}`);
+    },
+    create: (data: { outro_negocio_id: string; data: string; valor: number }) =>
+      http<PagamentoParcial>("/api/pagamentos", { method: "POST", body: JSON.stringify(data) }),
+    delete: (id: string) => http<{ ok: true }>(`/api/pagamentos?id=${id}`, { method: "DELETE" }),
   },
   // Métodos genéricos para requisições HTTP
   get: <T = any>(url: string) => http<T>(url),

@@ -39,7 +39,7 @@ const parseBrazilianCurrency = (value: string): number => {
 }
 
 const CurrencyInput = React.forwardRef<HTMLInputElement, CurrencyInputProps>(
-  ({ className, value = '', onChange, onBlur, showCurrency = false, suffix = '', placeholder, ...props }, ref) => {
+  ({ className, value = '', onChange, onBlur, showCurrency = false, suffix = '', placeholder, defaultValue, ...props }, ref) => {
     const [displayValue, setDisplayValue] = React.useState('')
     const [isFocused, setIsFocused] = React.useState(false)
 

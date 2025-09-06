@@ -29,19 +29,24 @@ import {
   saveParticipante,
   deleteParticipante,
   updateAcerto,
+  cancelarAcerto,
   getDespesasPendentes,
   saveDespesaPendente,
   deleteDespesaPendente,
   markDespesasUsadas,
+  getUltimosRecebimentos,
+  saveUltimoRecebimento,
+  deleteUltimoRecebimento,
   type Participante,
   type Acerto,
   type Despesa,
   type DespesaPendente,
+  type UltimoRecebimento,
 } from "@/lib/acertos"
 import type { LinhaVenda } from "@/lib/planilha"
 import { fmtCurrency } from "@/lib/format"
 import { toast } from "@/hooks/use-toast"
-import { Plus, Users, Receipt, Pencil } from "lucide-react"
+import { Plus, Users, Receipt, Pencil, Eye, Trash2 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import DespesasPendentesPanel from "@/components/acertos/despesas-pendentes-panel"
 import DespesasEditor from "@/components/acertos/despesas-editor"
@@ -70,6 +75,10 @@ export default function AcertosPage() {
   const [bancoInstituicao, setBancoInstituicao] = useState("")
   const [bancoLocked, setBancoLocked] = useState(false)
 
+  // Últimos recebimentos salvos no banco
+  const [ultimosRecebimentos, setUltimosRecebimentos] = useState<UltimoRecebimento[]>([])
+  const [currentRecebimentoId, setCurrentRecebimentoId] = useState<string | null>(null)
+
   // Distribuição
   const [observacoes, setObservacoes] = useState("")
   const [titulo, setTitulo] = useState("")
@@ -85,6 +94,10 @@ export default function AcertosPage() {
   const [editBancoValor, setEditBancoValor] = useState("")
   const [editBancoData, setEditBancoData] = useState("")
   const [editBancoInstituicao, setEditBancoInstituicao] = useState("")
+
+  // Modal de visualização de acerto
+  const [viewAcertoOpen, setViewAcertoOpen] = useState(false)
+  const [selectedAcerto, setSelectedAcerto] = useState<Acerto | null>(null)
 
   useEffect(() => {
     refreshAll()
@@ -109,23 +122,26 @@ export default function AcertosPage() {
     try {
       // Garantir que existe uma empresa padrão selecionada
       await ensureDefaultEmpresa()
-      const [participantesData, acertosData, despesasPendentesData, pendentesData] = await Promise.all([
+      const [participantesData, acertosData, despesasPendentesData, pendentesData, ultimosRecebimentosData] = await Promise.all([
         getParticipantes(),
         getAcertos(),
         getDespesasPendentes(),
-        pendenciasDeAcerto()
+        pendenciasDeAcerto(),
+        getUltimosRecebimentos()
       ])
       
       setParticipantes(participantesData)
       setAcertos(acertosData)
       setDespesasPendentes(despesasPendentesData.filter((d) => d.status === "pendente"))
       setPendentes(pendentesData)
+      setUltimosRecebimentos(ultimosRecebimentosData)
     } catch (error) {
       console.error('Erro ao carregar dados:', error)
       setParticipantes([])
       setAcertos([])
       setDespesasPendentes([])
       setPendentes([])
+      setUltimosRecebimentos([])
     }
   }
 
@@ -292,6 +308,57 @@ export default function AcertosPage() {
     }
   }
 
+  // Salvar último recebimento no banco
+  async function salvarUltimoRecebimento() {
+    if (!bancoNome.trim() && !bancoValor.trim() && !bancoData && !bancoInstituicao.trim()) {
+      toast({ title: "Preencha pelo menos um campo para salvar." })
+      return
+    }
+
+    try {
+      const recebimento = {
+        id: currentRecebimentoId || undefined,
+        nome: bancoNome.trim() || undefined,
+        valor: bancoValor ? Number(bancoValor) : undefined,
+        data_transacao: bancoData || undefined,
+        banco: bancoInstituicao.trim() || undefined
+      }
+
+      const id = await saveUltimoRecebimento(recebimento)
+      setCurrentRecebimentoId(id)
+      setBancoLocked(true)
+      await refreshAll()
+      toast({ title: "Último recebimento salvo no banco de dados!" })
+    } catch (error) {
+      console.error('Erro ao salvar último recebimento:', error)
+      toast({ title: "Erro ao salvar último recebimento", variant: "destructive" })
+    }
+  }
+
+  // Deletar último recebimento do banco
+  async function deletarUltimoRecebimento() {
+    if (!currentRecebimentoId) {
+      toast({ title: "Nenhum recebimento selecionado para deletar." })
+      return
+    }
+
+    try {
+      await deleteUltimoRecebimento(currentRecebimentoId)
+      // Limpar formulário
+      setBancoNome("")
+      setBancoValor("")
+      setBancoData("")
+      setBancoInstituicao("")
+      setBancoLocked(false)
+      setCurrentRecebimentoId(null)
+      await refreshAll()
+      toast({ title: "Último recebimento deletado do banco de dados!" })
+    } catch (error) {
+      console.error('Erro ao deletar último recebimento:', error)
+      toast({ title: "Erro ao deletar último recebimento", variant: "destructive" })
+    }
+  }
+
   // Editar "último recebimento" no histórico
   function openEditReceb(a: Acerto) {
     setEditAcertoId(a.id)
@@ -327,6 +394,33 @@ export default function AcertosPage() {
       console.error('Erro ao atualizar acerto:', error)
       toast({ title: "Erro ao atualizar último recebimento", variant: "destructive" })
     }
+  }
+
+  async function cancelarAcertoHandler(acerto: Acerto) {
+    if (!confirm(`Tem certeza que deseja cancelar o acerto "${acerto.titulo || 'Sem título'}"?\n\nEsta ação irá:\n- Deletar o acerto permanentemente\n- Retornar ${acerto.linhaIds.length} venda(s) para status "Pendente"\n- Liberar despesas pendentes usadas neste acerto`)) {
+      return
+    }
+    
+    try {
+      const result = await cancelarAcerto(acerto.id)
+      await refreshAll()
+      toast({ 
+        title: "Acerto cancelado com sucesso!", 
+        description: `${result.vendasRetornadas} venda(s) retornaram para status pendente.`
+      })
+    } catch (error) {
+      console.error('Erro ao cancelar acerto:', error)
+      toast({ 
+        title: "Erro ao cancelar acerto", 
+        description: "Tente novamente.",
+        variant: "destructive" 
+      })
+    }
+  }
+
+  function openViewAcerto(acerto: Acerto) {
+    setSelectedAcerto(acerto)
+    setViewAcertoOpen(true)
   }
 
   return (
@@ -502,7 +596,7 @@ export default function AcertosPage() {
                         size="sm"
                         variant="outline"
                         className="bg-transparent"
-                        onClick={() => setBancoLocked(true)}
+                        onClick={salvarUltimoRecebimento}
                       >
                         Salvar
                       </Button>
@@ -518,17 +612,26 @@ export default function AcertosPage() {
                         </Button>
                         <Button
                           size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setBancoNome("")
-                            setBancoValor("")
-                            setBancoData("")
-                            setBancoInstituicao("")
-                            setBancoLocked(false)
-                          }}
+                          variant="destructive"
+                          onClick={deletarUltimoRecebimento}
                         >
-                          Limpar
+                          Deletar
                         </Button>
+                        <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs"
+                        onClick={() => {
+                          setBancoNome("")
+                          setBancoValor("")
+                          setBancoData("")
+                          setBancoInstituicao("")
+                          setBancoLocked(false)
+                          setCurrentRecebimentoId(null)
+                        }}
+                      >
+                        Novo
+                      </Button>
                       </>
                     )}
                   </div>
@@ -581,6 +684,45 @@ export default function AcertosPage() {
                 </p>
               </div>
 
+              {/* Últimos recebimentos salvos no banco */}
+              {ultimosRecebimentos.length > 0 && (
+                <>
+                  <Separator className="my-4" />
+                  <div>
+                    <div className="text-sm font-medium mb-3">Últimos recebimentos salvos no banco</div>
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {ultimosRecebimentos.slice(0, 5).map((rec) => (
+                        <div
+                          key={rec.id}
+                          className={`p-2 border rounded cursor-pointer hover:bg-muted/50 ${
+                            currentRecebimentoId === rec.id ? 'bg-muted border-primary' : ''
+                          }`}
+                          onClick={() => {
+                            setBancoNome(rec.nome || "")
+                            setBancoValor(rec.valor?.toString() || "")
+                            setBancoData(rec.data_transacao ? rec.data_transacao.split('T')[0] : "")
+                            setBancoInstituicao(rec.banco || "")
+                            setCurrentRecebimentoId(rec.id)
+                            setBancoLocked(true)
+                          }}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium">{rec.nome || 'Sem nome'}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {rec.banco && `${rec.banco} • `}
+                                {rec.valor && `${fmtCurrency(rec.valor)} • `}
+                                {rec.data_transacao && new Date(rec.data_transacao).toLocaleDateString('pt-BR')}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
               <Separator className="my-4" />
 
               {/* Despesas salvas anteriormente */}
@@ -605,7 +747,7 @@ export default function AcertosPage() {
               <div className="grid gap-3 md:grid-cols-3">
                 <div>
                   <Label>Total líquido para distribuir</Label>
-                  <Input readOnly value={fmtCurrency(baseDistribuivel)} />
+                  <Input readOnly value={fmtCurrency(baseDistribuivel)} className="bg-green-100 border-green-200" />
                 </div>
                 <div className="md:col-span-3">
                   <Label>Observações</Label>
@@ -744,9 +886,22 @@ export default function AcertosPage() {
                       {a.ultimoRecebimentoBanco?.banco || "-"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" variant="outline" className="bg-transparent" onClick={() => openEditReceb(a)}>
-                        <Pencil className="mr-2 h-4 w-4" /> Editar receb.
-                      </Button>
+                      <div className="flex gap-2 justify-end">
+                        <Button size="sm" variant="outline" className="bg-transparent" onClick={() => openViewAcerto(a)}>
+                          <Eye className="mr-2 h-4 w-4" /> Visualizar
+                        </Button>
+                        <Button size="sm" variant="outline" className="bg-transparent" onClick={() => openEditReceb(a)}>
+                          <Pencil className="mr-2 h-4 w-4" /> Editar receb.
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="bg-transparent text-red-600 hover:text-red-700 hover:bg-red-50" 
+                          onClick={() => cancelarAcertoHandler(a)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Cancelar
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -825,6 +980,109 @@ export default function AcertosPage() {
                 Salvar
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal de visualização de acerto */}
+        <Dialog open={viewAcertoOpen} onOpenChange={setViewAcertoOpen}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Visualizar Acerto</DialogTitle>
+            </DialogHeader>
+            {selectedAcerto && (
+              <div className="space-y-6">
+                {/* Informações básicas */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Data</label>
+                    <p className="text-sm">{new Date(selectedAcerto.data).toLocaleDateString('pt-BR')}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Título</label>
+                    <p className="text-sm">{selectedAcerto.titulo}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Status</label>
+                    <p className="text-sm">{selectedAcerto.status}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Total de Linhas</label>
+                    <p className="text-sm">{selectedAcerto.linhas?.length || 0}</p>
+                  </div>
+                </div>
+
+                {/* Último recebimento banco */}
+                {selectedAcerto.ultimoRecebimentoBanco && (
+                  <div>
+                    <h3 className="text-lg font-semibold mb-3">Último Recebimento Banco</h3>
+                    <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">Nome</label>
+                        <p className="text-sm">{selectedAcerto.ultimoRecebimentoBanco.nome}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">Valor</label>
+                        <p className="text-sm">R$ {selectedAcerto.ultimoRecebimentoBanco.valor?.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">Banco</label>
+                        <p className="text-sm">{selectedAcerto.ultimoRecebimentoBanco.banco}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">Data</label>
+                        <p className="text-sm">{selectedAcerto.ultimoRecebimentoBanco.data ? new Date(selectedAcerto.ultimoRecebimentoBanco.data).toLocaleDateString('pt-BR') : '-'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Linhas do acerto */}
+                {selectedAcerto.linhas && selectedAcerto.linhas.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold mb-3">Linhas do Acerto</h3>
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Produto</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Cliente</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Valor Venda</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Lucro</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedAcerto.linhas.map((linha, index) => (
+                            <tr key={index} className="border-t">
+                              <td className="px-4 py-2 text-sm">{linha.produto || '-'}</td>
+                              <td className="px-4 py-2 text-sm">{linha.cliente || '-'}</td>
+                              <td className="px-4 py-2 text-sm">R$ {linha.valorVenda.toFixed(2)}</td>
+                              <td className="px-4 py-2 text-sm">R$ {linha.lucroValor.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Observações */}
+                {selectedAcerto.observacoes && (
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Observações</label>
+                    <p className="text-sm mt-1 p-3 bg-gray-50 rounded-lg">{selectedAcerto.observacoes}</p>
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => setViewAcertoOpen(false)}
+                  >
+                    Fechar
+                  </Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </main>

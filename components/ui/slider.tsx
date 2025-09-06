@@ -26,8 +26,7 @@ function Slider({
   return (
     <SliderPrimitive.Root
       data-slot="slider"
-      defaultValue={defaultValue}
-      value={value}
+      {...(value !== undefined ? { value } : { defaultValue })}
       min={min}
       max={max}
       className={cn(

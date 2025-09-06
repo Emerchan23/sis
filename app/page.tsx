@@ -17,6 +17,7 @@ type DashboardData = {
     totalRecebido: number
     totalAReceber: number
     lucroTotal: number
+    lucroLiquido: number
     impostosTotais: number
     totalVendas: number
     pendentes: number
@@ -27,7 +28,7 @@ type DashboardData = {
     totalPedidos: number
     pedidosPendentes: number
   }
-  alerts: { id: string; tipo: string; descricao: string; data: string; valor: number }[]
+  alerts: { id: string; type: string; title: string; message: string; timestamp: string }[]
   lastUpdate: string
 }
 
@@ -158,7 +159,7 @@ export default function HomePage() {
           </div>
 
           {/* Métricas principais */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
             <MetricCard 
               title="Total Recebido" 
               value={fmtCurrency(totals.totalRecebido)} 
@@ -170,6 +171,10 @@ export default function HomePage() {
             <MetricCard 
               title="Lucro Total" 
               value={fmtCurrency(totals.lucroTotal)} 
+            />
+            <MetricCard 
+              title="Lucro Líquido" 
+              value={fmtCurrency(totals.lucroLiquido)} 
             />
             <MetricCard 
               title="Impostos Totais" 
@@ -216,16 +221,34 @@ export default function HomePage() {
                 <div className="space-y-2">
                   {alerts && alerts.length > 0 ? (
                     alerts.map((alert) => (
-                      <div key={alert.id} className="flex items-center justify-between p-2 bg-red-50 rounded">
+                      <div key={alert.id} className={`flex items-center justify-between p-2 rounded ${
+                        alert.type === 'warning' ? 'bg-yellow-50' : 
+                        alert.type === 'info' ? 'bg-blue-50' : 'bg-red-50'
+                      }`}>
                         <div className="flex items-center space-x-2">
-                          <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                          <span className="text-sm">{alert.tipo}</span>
+                          <span className={`w-2 h-2 rounded-full ${
+                            alert.type === 'warning' ? 'bg-yellow-500' : 
+                            alert.type === 'info' ? 'bg-blue-500' : 'bg-red-500'
+                          }`}></span>
+                          <span className="text-sm font-medium">{alert.title}</span>
                         </div>
-                        <span className="text-sm text-gray-600">{alert.descricao} • {fmtCurrency(alert.valor)}</span>
+                        <span className="text-sm text-gray-600 flex-1 mx-2">{alert.message}</span>
                         <Button 
                           variant="outline" 
                           size="sm"
-                          onClick={() => router.push(`/vendas?numeroOF=${alert.id}`)}
+                          onClick={() => {
+                            if (alert.title.includes('Pagamentos Pendentes')) {
+                              router.push('/vendas')
+                            } else if (alert.title.includes('Orçamentos')) {
+                              router.push('/orcamentos')
+                            } else if (alert.title.includes('Clientes')) {
+                              router.push('/clientes')
+                            } else if (alert.title.includes('Produtos')) {
+                              router.push('/produtos')
+                            } else {
+                              router.push('/vendas')
+                            }
+                          }}
                         >
                           Ver
                         </Button>

@@ -5,19 +5,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Printer, Trash2, Download, Edit } from "lucide-react"
+import { Trash2, Download, Edit, CheckCheck, X } from "lucide-react"
 import { fmtCurrency } from "@/lib/format"
 import OrcamentoForm from "@/components/orcamento-form"
-import { getOrcamentos, deleteOrcamento, type Orcamento } from "@/lib/orcamentos"
+import { getOrcamentos, deleteOrcamento, aprovarOrcamento, desaprovarOrcamento, type Orcamento } from "@/lib/orcamentos"
 import { AppHeader } from "@/components/app-header"
-import { makeOrcamentoHTML, openPrintWindow, downloadPDF } from "@/lib/print"
+import { makeOrcamentoHTML, downloadPDF } from "@/lib/print"
 import { ensureDefaultEmpresa } from "@/lib/empresas"
 
 // Using backend types
 type LocalOrcamento = Orcamento
 
 function totalOrcamento(o: LocalOrcamento) {
-  return o.itens.reduce((acc, it) => acc + (Number(it.quantidade) || 0) * (Number(it.precoUnitario) || 0) - (Number(it.desconto) || 0), 0)
+  if (!o.itens || !Array.isArray(o.itens)) {
+    return 0
+  }
+  return o.itens.reduce((acc, it) => acc + (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0) - (Number(it.desconto) || 0), 0)
 }
 
 export default function OrcamentosPage() {
@@ -45,15 +48,6 @@ export default function OrcamentosPage() {
       window.removeEventListener("storage", onChange)
     }
   }, [])
-
-  const handleImprimir = async (o: LocalOrcamento) => {
-    // Garante empresa atual definida nas Configurações Gerais
-    await ensureDefaultEmpresa()
-    // Passa o total calculado para o gerador de HTML
-    const withTotal = { ...o, total: totalOrcamento(o) }
-    const html = await makeOrcamentoHTML(withTotal as any)
-    openPrintWindow(html, `Orçamento #${o.numero}`)
-  }
 
   const handleBaixarPDF = async (o: LocalOrcamento) => {
     // Garante empresa atual definida nas Configurações Gerais
@@ -125,6 +119,7 @@ export default function OrcamentosPage() {
                       <TableHead>#</TableHead>
                       <TableHead>Cliente</TableHead>
                       <TableHead>Data</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead className="text-right">Total</TableHead>
                       <TableHead className="w-32" />
                     </TableRow>
@@ -132,7 +127,7 @@ export default function OrcamentosPage() {
                   <TableBody>
                     {orcamentos.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
                           Nenhum orçamento salvo.
                         </TableCell>
                       </TableRow>
@@ -141,9 +136,58 @@ export default function OrcamentosPage() {
                         <TableRow key={o.id}>
                           <TableCell>{o.numero}</TableCell>
                           <TableCell>{o.cliente?.nome}</TableCell>
-                          <TableCell>{new Date(o.data).toLocaleDateString()}</TableCell>
+                          <TableCell>{new Date(o.data).toLocaleDateString('pt-BR')}</TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              o.status === 'aprovado' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {o.status === 'aprovado' ? 'Aprovado' : 'Pendente'}
+                            </span>
+                          </TableCell>
                           <TableCell className="text-right">{fmtCurrency(totalOrcamento(o))}</TableCell>
                           <TableCell className="flex justify-end gap-2">
+                            {o.status === 'aprovado' ? (
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                title="Desaprovar orçamento"
+                                onClick={async () => {
+                                  try {
+                                    const success = await desaprovarOrcamento(o.id)
+                                    if (success) {
+                                      await reload()
+                                    }
+                                  } catch (error) {
+                                    console.error('Erro ao desaprovar orçamento:', error)
+                                  }
+                                }}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                title="Aprovar orçamento"
+                                onClick={async () => {
+                                  try {
+                                    const success = await aprovarOrcamento(o.id)
+                                    if (success) {
+                                      await reload()
+                                    }
+                                } catch (error) {
+                                  console.error("Erro ao aprovar orçamento:", error)
+                                }
+                              }}
+                              className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                            >
+                              <CheckCheck className="h-4 w-4" />
+                              <span className="sr-only">Aprovar</span>
+                            </Button>
+                            )}
                             <Button
                               variant="outline"
                               size="icon"
@@ -152,15 +196,6 @@ export default function OrcamentosPage() {
                             >
                               <Edit className="h-4 w-4" />
                               <span className="sr-only">Editar</span>
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              title="Gerar documento do orçamento"
-                              onClick={() => handleImprimir(o)}
-                            >
-                              <Printer className="h-4 w-4" />
-                              <span className="sr-only">Gerar documento</span>
                             </Button>
                             <Button
                               variant="outline"

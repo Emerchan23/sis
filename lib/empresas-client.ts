@@ -8,6 +8,8 @@ type Empresa = {
   razaoSocial?: string
   cnpj?: string
   endereco?: string
+  email?: string
+  telefone?: string
   logoUrl?: string
   nomeDoSistema?: string
   createdAt?: string
@@ -100,7 +102,24 @@ export async function updateCurrentEmpresaById(id: string): Promise<void> {
     const empresas = await getEmpresas()
     const empresa = empresas.find(e => e.id === id)
     if (empresa) {
-      setCurrentEmpresa(empresa)
+      // Carregar configurações adicionais da empresa
+      try {
+        const config = await api.empresas.config.get(id)
+        const empresaCompleta = {
+          ...empresa,
+          razaoSocial: config?.razaoSocial || "",
+          cnpj: config?.cnpj || "",
+          endereco: config?.endereco || "",
+          email: config?.email || "",
+          telefone: config?.telefone || "",
+          logoUrl: config?.logoUrl || "",
+          nomeDoSistema: config?.nomeDoSistema || "LP IND"
+        }
+        setCurrentEmpresa(empresaCompleta)
+      } catch (configError) {
+        console.error('Erro ao carregar configuração da empresa:', configError)
+        setCurrentEmpresa(empresa)
+      }
     }
   } catch (error) {
     console.error("Erro ao atualizar empresa atual:", error)

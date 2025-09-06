@@ -11,6 +11,51 @@ function generateId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+// Função para gerar número do orçamento no formato número/ano
+async function generateOrcamentoNumber(): Promise<string> {
+  const currentYear = new Date().getFullYear()
+  
+  try {
+    // Buscar orçamentos do ano atual para determinar o próximo número
+    const response = await fetch('/api/orcamentos?incluir_itens=false')
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    
+    const orcamentos = await response.json()
+    
+    // Filtrar orçamentos do ano atual e extrair números
+    const orcamentosDoAno = orcamentos.filter((orc: any) => {
+      const numero = orc.numero.toString()
+      return numero.includes(`/${currentYear}`)
+    })
+    
+    // Encontrar o maior número do ano
+    let maiorNumero = 0
+    orcamentosDoAno.forEach((orc: any) => {
+      const numero = orc.numero.toString()
+      const partes = numero.split('/')
+      if (partes.length === 2) {
+        const num = parseInt(partes[0])
+        if (!isNaN(num) && num > maiorNumero) {
+          maiorNumero = num
+        }
+      }
+    })
+    
+    // Próximo número sequencial com formatação de zero à esquerda
+    const proximoNumero = maiorNumero + 1
+    const numeroFormatado = proximoNumero.toString().padStart(2, '0')
+    return `${numeroFormatado}/${currentYear}`
+    
+  } catch (error) {
+    console.error('Erro ao gerar número do orçamento:', error)
+    // Fallback mais seguro: começar do 01 se houver erro
+    return `01/${currentYear}`
+  }
+}
+
 // Local storage keys for draft saving
 const DRAFT_STORAGE_KEY = 'orcamento_draft'
 const DRAFT_TIMESTAMP_KEY = 'orcamento_draft_timestamp'
@@ -43,7 +88,7 @@ type ClienteState = OrcamentoCliente
 
 // Re-export types for compatibility
 export type { OrcamentoCliente as ClienteState }
-export type OrcamentoItem = FormOrcamentoItem
+export type { OrcamentoItem } from "@/lib/api-client"
 
 // Legacy function for compatibility - now uses backend
 export async function getOrcamentosSync(): Promise<Orcamento[]> {
@@ -196,9 +241,9 @@ export function OrcamentoForm({ orcamentoParaEdicao, onSalvoComSucesso }: Orcame
         descricao: item.descricao,
         marca: item.marca || "",
         quantidade: item.quantidade,
-        valorUnitario: item.precoUnitario,
-        linkRef: "",
-        custoRef: undefined
+        valorUnitario: item.valor_unitario,
+        linkRef: item.link_ref || "",
+        custoRef: item.custo_ref || undefined
       }))
       
       setItens(itensForm.length > 0 ? itensForm : [
@@ -234,28 +279,42 @@ export function OrcamentoForm({ orcamentoParaEdicao, onSalvoComSucesso }: Orcame
   const onSalvar = async () => {
     if (!canSave) return
     try {
-      // Convert OrcamentoItem format to match backend expectations
+      // Convert FormOrcamentoItem format to match backend API expectations
       const backendItens = itens.map(item => ({
         id: generateId(),
-        produtoId: "", // Will need to be mapped if products are used
+        produto_id: "", // Will need to be mapped if products are used
         descricao: item.descricao,
-        marca: item.marca,
+        marca: item.marca || "",
         quantidade: item.quantidade,
-        precoUnitario: item.valorUnitario,
-        desconto: 0
+        valor_unitario: item.valorUnitario, // API expects valor_unitario
+        desconto: 0,
+        link_ref: item.linkRef || null,
+        custo_ref: item.custoRef || null
       }))
+      
+      // Generate numero if creating new orcamento
+      const numero = orcamentoParaEdicao ? orcamentoParaEdicao.numero : await generateOrcamentoNumber()
+      
+      // Use cliente_id from selected client, or existing cliente.id, or generate new one
+      let cliente_id = clienteIdSel || cliente.id
+      if (!cliente_id) {
+        // If no client selected and no existing ID, generate one for the manually entered client
+        cliente_id = generateId()
+      }
       
       const dadosParaSalvar = orcamentoParaEdicao ? {
         id: orcamentoParaEdicao.id,
-        data: orcamentoParaEdicao.data,
-        cliente, 
-        itens: backendItens, 
-        observacoes 
+        numero: orcamentoParaEdicao.numero,
+        cliente_id: cliente_id,
+        data_orcamento: orcamentoParaEdicao.data,
+        observacoes,
+        itens: backendItens
       } : { 
-        data: new Date().toISOString(),
-        cliente, 
-        itens: backendItens, 
-        observacoes 
+        numero: numero, // Enviar o número completo no formato "número/ano"
+        cliente_id: cliente_id,
+        data_orcamento: new Date().toISOString(),
+        observacoes,
+        itens: backendItens
       }
       
       const result = await saveOrcamento(dadosParaSalvar)
@@ -497,9 +556,9 @@ function ItemRow({
   onRemove,
 }: {
   index: number
-  item: OrcamentoItem
+  item: FormOrcamentoItem
   subtotal: number
-  onChange: (idx: number, patch: Partial<OrcamentoItem>) => void
+  onChange: (idx: number, patch: Partial<FormOrcamentoItem>) => void
   onRemove: (idx: number) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -531,39 +590,67 @@ function ItemRow({
             </button>
 
             {open && (
-              <div id={`privado-${index}`} className="mt-3 grid gap-3 md:grid-cols-2">
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Link ref. (privado)</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="https://loja.com/produto"
-                      value={item.linkRef || ""}
-                      onChange={(e) => onChange(index, { linkRef: e.target.value })}
+              <div id={`privado-${index}`} className="mt-3 space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Link ref. (privado)</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="https://loja.com/produto"
+                        value={item.linkRef || ""}
+                        onChange={(e) => onChange(index, { linkRef: e.target.value })}
+                      />
+                      {item.linkRef ? (
+                        <a
+                          href={item.linkRef}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
+                          title="Abrir link de referência"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Custo ref. (privado)</Label>
+                    <CurrencyInput
+                      placeholder="0,00"
+                      value={item.custoRef ?? ""}
+                      onChange={(value) =>
+                        onChange(index, { custoRef: value === "" ? undefined : Number(value.replace(',', '.')) })
+                      }
                     />
-                    {item.linkRef ? (
-                      <a
-                        href={item.linkRef}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
-                        title="Abrir link de referência"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    ) : null}
                   </div>
                 </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Custo ref. (privado)</Label>
-                  <CurrencyInput
-                    placeholder="0,00"
-                    value={item.custoRef ?? ""}
-                    onChange={(value) =>
-                      onChange(index, { custoRef: value === "" ? undefined : Number(value.replace(',', '.')) })
-                    }
-                  />
-                </div>
+                
+                {/* Informações calculadas */}
+                {(item.custoRef !== undefined && item.custoRef !== null) && item.valorUnitario > 0 && (
+                  <div className="grid gap-3 md:grid-cols-2 pt-2 border-t">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Custo sobre Valor Unitário</Label>
+                      <div className="text-sm font-medium text-muted-foreground">
+                        {item.valorUnitario > 0 ? ((item.custoRef / item.valorUnitario) * 100).toFixed(1) : '0'}% do valor de venda
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Margem de Lucro</Label>
+                      <div className={`text-sm font-medium ${
+                        item.valorUnitario > item.custoRef ? 'text-green-600' : 
+                        item.valorUnitario < item.custoRef ? 'text-red-600' : 'text-gray-600'
+                      }`}>
+                        {item.valorUnitario > 0 
+                          ? `${(((item.valorUnitario - item.custoRef) / item.valorUnitario) * 100).toFixed(1)}%`
+                          : '0%'
+                        }
+                        {item.valorUnitario < item.custoRef && ' (Prejuízo)'}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

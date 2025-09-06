@@ -2,6 +2,88 @@
 
 Sistema ERP completo desenvolvido em Next.js com backend em Node.js, focado em gestão de vendas, clientes, produtos e relatórios financeiros.
 
+## 🚀 Instalação Automática
+
+Este sistema possui instalação **100% automática**. Basta executar um comando e tudo será configurado automaticamente.
+
+### Pré-requisitos
+
+- **Node.js 18+** (será instalado automaticamente se não estiver presente)
+- **Docker** (será instalado automaticamente no Linux, manual no Windows/Mac)
+
+### Instalação em 1 Comando
+
+```bash
+npm run setup
+```
+
+Ou execute diretamente:
+
+```bash
+node install.js
+```
+
+### O que a instalação automática faz:
+
+1. ✅ Verifica e instala Node.js (se necessário)
+2. ✅ Verifica e instala Docker (se necessário)
+3. ✅ Cria diretório de dados externo (`./data/`)
+4. ✅ Configura arquivo de ambiente (`.env.local`)
+5. ✅ Instala todas as dependências npm
+6. ✅ Constrói o projeto
+7. ✅ Cria scripts de inicialização
+
+## 🎯 Como Usar
+
+### Desenvolvimento
+```bash
+npm run start-dev
+# ou
+npm run dev
+```
+Acesse: http://localhost:3145
+
+### Produção (Docker)
+```bash
+npm run start-prod
+# ou
+docker-compose up --build
+```
+Acesse: http://localhost:4523
+
+### Comandos Docker
+```bash
+npm run docker:build    # Construir imagem
+npm run docker:up       # Iniciar em background
+npm run docker:down     # Parar containers
+npm run docker:logs     # Ver logs
+```
+
+## 📁 Estrutura do Banco de Dados
+
+- **Localização**: `./data/erp.sqlite`
+- **Tipo**: SQLite
+- **Status**: **Externo ao Docker** (dados persistem mesmo removendo containers)
+
+## 🔧 Configuração
+
+Todas as configurações estão no arquivo `.env.local` (criado automaticamente):
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:3145
+DB_PATH=./data/erp.sqlite
+NODE_ENV=development
+```
+
+## 🔄 Instalação Limpa (Teste)
+
+Para testar uma instalação completamente limpa:
+
+1. Delete a pasta `node_modules`
+2. Delete a pasta `data`
+3. Delete o arquivo `.env.local`
+4. Execute: `npm run setup`
+
 ## 🚀 Funcionalidades
 
 - **Gestão de Clientes**: Cadastro completo de clientes com histórico de compras

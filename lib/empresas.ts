@@ -10,6 +10,8 @@ export type Empresa = {
   razaoSocial?: string;
   cnpj?: string;
   endereco?: string;
+  email?: string;
+  telefone?: string;
   logoUrl?: string;
   nomeDoSistema?: string;
   createdAt?: string;
@@ -21,29 +23,47 @@ type UserPrefs = {
 }
 
 export async function getEmpresas(): Promise<Empresa[]> {
-  const empresas = await api.empresas.list()
-  
-  // Load additional config data for each empresa
-  const empresasWithConfig = await Promise.all(
-    empresas.map(async (empresa) => {
-      try {
-        const config = await api.empresas.config.get(empresa.id)
-        return {
-          ...empresa,
-          razaoSocial: config?.razaoSocial || "",
-          cnpj: config?.cnpj || "",
-          endereco: config?.endereco || "",
-          logoUrl: config?.logoUrl || "",
-          nomeDoSistema: config?.nomeDoSistema || "LP IND"
+  try {
+    const empresas = await api.empresas.list()
+    
+    // Load additional config data for each empresa
+    const empresasWithConfig = await Promise.all(
+      empresas.map(async (empresa) => {
+        try {
+          const config = await api.empresas.config.get(empresa.id)
+          return {
+            ...empresa,
+            razaoSocial: config?.razaoSocial || "",
+            cnpj: config?.cnpj || "",
+            endereco: config?.endereco || "",
+            email: config?.email || "",
+            telefone: config?.telefone || "",
+            logoUrl: config?.logoUrl || "",
+            nomeDoSistema: config?.nomeDoSistema || "LP IND"
+          }
+        } catch (error) {
+          console.warn(`Não foi possível carregar configuração para empresa ${empresa.nome} (${empresa.id}):`, error)
+          // Return empresa with default values if config fails
+          return {
+            ...empresa,
+            razaoSocial: "",
+            cnpj: "",
+            endereco: "",
+            email: "",
+            telefone: "",
+            logoUrl: "",
+            nomeDoSistema: "LP IND"
+          }
         }
-      } catch (error) {
-        console.error(`Error loading config for empresa ${empresa.id}:`, error)
-        return empresa
-      }
-    })
-  )
-  
-  return empresasWithConfig
+      })
+    )
+    
+    return empresasWithConfig
+  } catch (error) {
+    console.error('Erro ao carregar lista de empresas:', error)
+    // Return empty array if main list fails
+    return []
+  }
 }
 
 export async function ensureDefaultEmpresa(): Promise<void> {
@@ -82,6 +102,8 @@ export async function getCurrentEmpresa(): Promise<Empresa | null> {
       razaoSocial: config?.razaoSocial || "",
       cnpj: config?.cnpj || "",
       endereco: config?.endereco || "",
+      email: config?.email || "",
+      telefone: config?.telefone || "",
       logoUrl: config?.logoUrl || "",
       nomeDoSistema: config?.nomeDoSistema || "LP IND"
     }
@@ -112,6 +134,8 @@ export async function saveEmpresa(empresa: Partial<Empresa> & { id?: string }): 
     razaoSocial: empresa.razaoSocial || "",
     cnpj: empresa.cnpj || "",
     endereco: empresa.endereco || "",
+    email: empresa.email || "",
+    telefone: empresa.telefone || "",
     logoUrl: empresa.logoUrl || "",
     nomeDoSistema: empresa.nomeDoSistema || "LP IND"
   }

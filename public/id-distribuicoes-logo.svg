@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <rect width="800" height="800" fill="#808080"/>
+  <text x="400" y="320" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="120" font-weight="bold">ID</text>
+  <text x="400" y="420" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="32" letter-spacing="8">DISTRIBUIÇÕES</text>
+  <text x="400" y="580" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="120" font-weight="bold">ID</text>
+</svg>

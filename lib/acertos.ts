@@ -113,6 +113,21 @@ export async function updateAcerto(id: string, patch: Partial<Acerto>): Promise<
   }
 }
 
+export async function cancelarAcerto(id: string): Promise<{ message: string; vendasRetornadas: number }> {
+  try {
+    const result = await api.acertos.cancel(id)
+    // Dispatch event for UI updates
+    if (typeof window !== "undefined") {
+      const ev = new CustomEvent("ERP_CHANGED_EVENT", { detail: { key: "acertos" } })
+      window.dispatchEvent(ev)
+    }
+    return result
+  } catch (error) {
+    console.error('Erro ao cancelar acerto:', error)
+    throw error
+  }
+}
+
 // Utilitários
 export async function lucroTotalPorLinhas(ids: string[]): Promise<number> {
   const set = new Set(ids)
@@ -252,6 +267,89 @@ export async function markDespesasUsadas(ids: string[], acertoId: string): Promi
     }
   } catch (error) {
     console.error('Erro ao marcar despesas como usadas:', error)
+    throw error
+  }
+}
+
+// Último Recebimento no Banco
+export type UltimoRecebimento = {
+  id: string
+  nome?: string
+  valor?: number
+  data_transacao?: string
+  banco?: string
+  observacoes?: string
+  created_at: string
+  updated_at: string
+}
+
+export async function getUltimosRecebimentos(): Promise<UltimoRecebimento[]> {
+  try {
+    const response = await fetch('/api/ultimo-recebimento')
+    if (!response.ok) throw new Error('Erro ao buscar últimos recebimentos')
+    return await response.json()
+  } catch (error) {
+    console.error('Erro ao buscar últimos recebimentos:', error)
+    return []
+  }
+}
+
+export async function saveUltimoRecebimento(
+  recebimento: Omit<UltimoRecebimento, "id" | "created_at" | "updated_at"> & { id?: string }
+): Promise<string> {
+  try {
+    if (recebimento.id) {
+      // Update existing
+      const response = await fetch(`/api/ultimo-recebimento/${recebimento.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: recebimento.nome,
+          valor: recebimento.valor,
+          data_transacao: recebimento.data_transacao,
+          banco: recebimento.banco,
+          observacoes: recebimento.observacoes
+        })
+      })
+      if (!response.ok) throw new Error('Erro ao atualizar último recebimento')
+      return recebimento.id
+    } else {
+      // Create new
+      const response = await fetch('/api/ultimo-recebimento', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: recebimento.nome,
+          valor: recebimento.valor,
+          data_transacao: recebimento.data_transacao,
+          banco: recebimento.banco,
+          observacoes: recebimento.observacoes
+        })
+      })
+      if (!response.ok) throw new Error('Erro ao salvar último recebimento')
+      const result = await response.json()
+      return result.id
+    }
+  } catch (error) {
+    console.error('Erro ao salvar último recebimento:', error)
+    throw error
+  }
+}
+
+export async function deleteUltimoRecebimento(id: string): Promise<void> {
+  try {
+    const response = await fetch(`/api/ultimo-recebimento/${id}`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) throw new Error('Erro ao deletar último recebimento')
+    
+    // Dispatch event for UI updates
+    if (typeof window !== "undefined") {
+      const ev = new CustomEvent("ERP_CHANGED_EVENT", { detail: { key: "ultimo_recebimento" } })
+      window.dispatchEvent(ev)
+    }
+  } catch (error) {
+    console.error('Erro ao deletar último recebimento:', error)
     throw error
   }
 }

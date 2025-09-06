@@ -32,7 +32,7 @@ import {
   updateLinhaColor,
 } from "@/lib/planilha"
 import * as XLSX from "xlsx"
-import { SlidersHorizontal, Upload, Plus, FileDown, BadgePercent, ListPlus, Palette } from "lucide-react"
+import { SlidersHorizontal, Upload, Plus, FileDown, BadgePercent, ListPlus, Palette, Maximize2, Minimize2 } from "lucide-react"
 import { ManageRatesDialog } from "@/components/manage-rates-dialog"
 import { getCapitalRates, getImpostoRates, type Rate } from "@/lib/rates"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -564,7 +564,7 @@ export default function VendasPlanilhaPage() {
                           let displayValue = value
                           
                           // Formatação específica por tipo de coluna
-                          if (col.key.includes('valor') || col.key.includes('Vl') || col.key.includes('custo') || col.key.includes('lucro')) {
+                          if (col.key.includes('valor') || col.key.includes('Vl') || col.key.includes('custo') || col.key.includes('lucro') || col.key === 'somaCustoFinal') {
                             // Garantir que o valor seja um número antes de formatar
                             const numValue = typeof value === 'string' ? parseFloat(value) || 0 : (value || 0)
                             displayValue = fmtCurrency(numValue)
@@ -668,6 +668,7 @@ function EditDialog({
   onOpenManageModalidades: () => void
 }) {
   const [formData, setFormData] = useState<Partial<LinhaVenda>>({})
+  const [isMaximized, setIsMaximized] = useState(false)
 
   // Resetar form quando modal abrir/fechar ou row mudar
   useEffect(() => {
@@ -678,6 +679,7 @@ function EditDialog({
         paymentStatus: 'Pendente',
         settlementStatus: 'Pendente'
       })
+      setIsMaximized(false) // Reset maximize state when opening
     }
   }, [open, row])
 
@@ -740,11 +742,22 @@ function EditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent 
+        className={isMaximized ? "!fixed !inset-0 !w-screen !h-screen !max-w-none !max-h-none !m-0 !p-6 !rounded-none !transform-none !translate-x-0 !translate-y-0 !z-[60] overflow-y-auto" : "max-w-4xl max-h-[90vh] overflow-y-auto"}
+      >
+        <DialogHeader className="flex flex-row items-center justify-between">
           <DialogTitle>
             {row ? 'Editar Linha de Venda' : 'Nova Linha de Venda'}
           </DialogTitle>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsMaximized(!isMaximized)}
+            className="ml-auto"
+          >
+            {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </Button>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-6">

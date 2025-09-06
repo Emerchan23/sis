@@ -9,6 +9,7 @@ import { fmtDate } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { CnpjCpfInput, PhoneInput } from "@/components/ui/masked-input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
@@ -116,7 +117,7 @@ export default function ClientesPage() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="documento">CNPJ/CPF</Label>
-                <Input id="documento" name="documento" defaultValue={editing?.documento || ""} />
+                <CnpjCpfInput id="documento" name="documento" defaultValue={editing?.documento || ""} />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="endereco">Endereço</Label>
@@ -124,7 +125,7 @@ export default function ClientesPage() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="telefone">Telefone</Label>
-                <Input id="telefone" name="telefone" defaultValue={editing?.telefone || ""} />
+                <PhoneInput id="telefone" name="telefone" defaultValue={editing?.telefone || ""} />
               </div>
               <div className="grid gap-2 md:col-span-2">
                 <Label htmlFor="email">Email</Label>

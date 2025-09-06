@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useState } from "react"
 import { getConfig, CONFIG_CHANGED_EVENT } from "@/lib/config"
 import { ensureDefaultEmpresa, getCurrentEmpresa, EMPRESA_CHANGED_EVENT } from "@/lib/empresas-client"
+import { ERP_CHANGED_EVENT } from "@/lib/data-store"
 
 
 const routes = [
@@ -32,6 +33,21 @@ export function AppHeader({ className = "" }: { className?: string }) {
   const [empresaNome, setEmpresaNome] = useState<string>("")
 
   const placeholderLogo = useMemo(() => "/placeholder.svg?height=28&width=28", [])
+  
+  // Função para sanitizar URLs de logo e evitar erro CORS
+  const sanitizeLogoUrl = (url: string | undefined): string => {
+    if (!url || url.trim() === "") {
+      return placeholderLogo
+    }
+    
+    // Verificar se é um link do Google Drive e substituir por placeholder
+    if (url.includes('drive.google.com') || url.includes('googleusercontent.com')) {
+      console.warn('URL do Google Drive detectada no cabeçalho, usando placeholder para evitar erro CORS:', url)
+      return placeholderLogo
+    }
+    
+    return url
+  }
 
   useEffect(() => {
     const initData = async () => {
@@ -69,12 +85,30 @@ export function AppHeader({ className = "" }: { className?: string }) {
       }
     }
 
+    const onErpChanged = async () => {
+      try {
+        await ensureDefaultEmpresa()
+        const curEmp = getCurrentEmpresa()
+        if (curEmp?.nomeDoSistema) {
+          setBrand(curEmp.nomeDoSistema)
+        }
+        if (curEmp?.logoUrl) {
+          setLogoUrl(curEmp.logoUrl)
+        }
+        setEmpresaNome(curEmp?.nome || "")
+      } catch (error) {
+        console.error("Erro ao recarregar dados da empresa:", error)
+      }
+    }
+
     window.addEventListener(CONFIG_CHANGED_EVENT, onConfigChanged as EventListener)
     window.addEventListener(EMPRESA_CHANGED_EVENT, onEmpresaChanged as EventListener)
+    window.addEventListener(ERP_CHANGED_EVENT, onErpChanged as EventListener)
     
     return () => {
       window.removeEventListener(CONFIG_CHANGED_EVENT, onConfigChanged as EventListener)
       window.removeEventListener(EMPRESA_CHANGED_EVENT, onEmpresaChanged as EventListener)
+      window.removeEventListener(ERP_CHANGED_EVENT, onErpChanged as EventListener)
     }
   }, [pathname])
 
@@ -85,16 +119,23 @@ export function AppHeader({ className = "" }: { className?: string }) {
         className,
       )}
     >
-      <div className="mx-auto flex h-14 min-h-14 max-w-7xl items-center gap-3 px-4">
+      <div className="mx-auto flex h-16 min-h-16 max-w-7xl items-center gap-3 px-4">
         {/* Marca */}
         <Link href="/" className="flex shrink-0 items-center gap-2" title={brand}>
-          <Image
-            src={logoUrl && logoUrl.trim() !== "" ? logoUrl : placeholderLogo}
-            alt="Logo da empresa"
-            width={28}
-            height={28}
-            className="rounded object-cover"
-          />
+          {logoUrl ? (
+            <Image
+              src={sanitizeLogoUrl(logoUrl)}
+              alt="Logo da empresa"
+              width={48}
+              height={48}
+              className="rounded object-cover"
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex flex-col items-center justify-center text-white">
+              <div className="text-xs font-bold leading-none">ID</div>
+              <div className="text-[6px] font-semibold leading-none tracking-wider">DISTRIBUIÇÃO</div>
+            </div>
+          )}
           <span className="font-semibold truncate max-w-[40vw]">{brand}</span>
         </Link>
 
